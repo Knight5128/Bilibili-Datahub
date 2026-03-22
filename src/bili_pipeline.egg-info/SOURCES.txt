@@ -1,8 +1,9 @@
-methods-v1.md
+README.md
 pyproject.toml
 src/bili_pipeline/__init__.py
 src/bili_pipeline/bilibili_zones.py
 src/bili_pipeline/crawl_api.py
+src/bili_pipeline/field_reference.py
 src/bili_pipeline.egg-info/PKG-INFO
 src/bili_pipeline.egg-info/SOURCES.txt
 src/bili_pipeline.egg-info/dependency_links.txt
@@ -17,6 +18,7 @@ src/bili_pipeline/discover/bilibili_sources.py
 src/bili_pipeline/discover/builder.py
 src/bili_pipeline/discover/demo.py
 src/bili_pipeline/discover/export_csv.py
+src/bili_pipeline/discover/full_site.py
 src/bili_pipeline/discover/interfaces.py
 src/bili_pipeline/discover/mock_sources.py
 src/bili_pipeline/discover/real_demo.py
@@ -26,9 +28,14 @@ src/bili_pipeline/models/__init__.py
 src/bili_pipeline/models/crawl.py
 src/bili_pipeline/models/video_pool.py
 src/bili_pipeline/storage/__init__.py
+src/bili_pipeline/storage/gcp_store.py
 src/bili_pipeline/storage/oss_store.py
 src/bili_pipeline/storage/sqlite_store.py
 src/bili_pipeline/utils/__init__.py
 src/bili_pipeline/utils/async_tools.py
+src/bili_pipeline/utils/bilibili_jump.py
+src/bili_pipeline/utils/file_merge.py
+src/bili_pipeline/utils/streamlit_night_sky.py
 tests/test_bilibili_sources.py
+tests/test_file_merge_utils.py
 tests/test_video_pool_builder.py

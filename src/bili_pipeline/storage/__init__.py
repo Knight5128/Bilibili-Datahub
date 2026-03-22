@@ -1,6 +1,5 @@
 """Storage backends for crawler outputs."""
 
-from .oss_store import OSSMediaStore
-from .sqlite_store import SQLiteCrawlerStore
+from .gcp_store import BigQueryCrawlerStore, GcsMediaStore
 
-__all__ = ["OSSMediaStore", "SQLiteCrawlerStore"]
+__all__ = ["BigQueryCrawlerStore", "GcsMediaStore"]

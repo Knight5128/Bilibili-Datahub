@@ -15,75 +15,83 @@ from bili_pipeline.models import (
     BatchCrawlReport,
     CommentSnapshot,
     FullCrawlSummary,
+    GCPStorageConfig,
     MediaDownloadStrategy,
     MediaResult,
     MetaResult,
     StatSnapshot,
 )
-from bili_pipeline.storage import SQLiteCrawlerStore
+from bili_pipeline.storage import BigQueryCrawlerStore
 
 
-DEFAULT_DB_PATH = "outputs/bili_video_data_crawler.db"
+def _resolve_gcp_config(
+    gcp_config: GCPStorageConfig | None = None,
+    strategy: MediaDownloadStrategy | None = None,
+) -> GCPStorageConfig:
+    resolved = gcp_config or (strategy.gcp_config if strategy is not None else None)
+    if resolved is None or not resolved.is_enabled():
+        raise ValueError("缺少可用的 GCP 配置。请至少提供 BigQuery Dataset 与 GCS Bucket。")
+    return resolved
 
 
-def _store(db_path: str | Path = DEFAULT_DB_PATH) -> SQLiteCrawlerStore:
-    return SQLiteCrawlerStore(db_path)
+def _store(gcp_config: GCPStorageConfig) -> BigQueryCrawlerStore:
+    return BigQueryCrawlerStore(gcp_config)
 
 
 def crawl_video_meta(
     bvid: str,
-    db_path: str | Path = DEFAULT_DB_PATH,
+    gcp_config: GCPStorageConfig,
     credential: Any | None = None,
 ) -> MetaResult:
     result = _crawl_video_meta(bvid, credential=credential)
-    _store(db_path).save_video_meta(result)
+    _store(_resolve_gcp_config(gcp_config)).save_video_meta(result)
     return result
 
 
 def crawl_stat_snapshot(
     bvid: str,
-    db_path: str | Path = DEFAULT_DB_PATH,
+    gcp_config: GCPStorageConfig,
     credential: Any | None = None,
 ) -> StatSnapshot:
     snapshot = _crawl_stat_snapshot(bvid, credential=credential)
-    _store(db_path).save_stat_snapshot(snapshot)
+    _store(_resolve_gcp_config(gcp_config)).save_stat_snapshot(snapshot)
     return snapshot
 
 
 def crawl_latest_comments(
     bvid: str,
     limit: int = 10,
-    db_path: str | Path = DEFAULT_DB_PATH,
+    gcp_config: GCPStorageConfig | None = None,
     credential: Any | None = None,
 ) -> CommentSnapshot:
     snapshot = _crawl_latest_comments(bvid, limit=limit, credential=credential)
-    _store(db_path).save_comment_snapshot(snapshot)
+    _store(_resolve_gcp_config(gcp_config)).save_comment_snapshot(snapshot)
     return snapshot
 
 
 def stream_media_to_store(
     bvid: str,
     strategy: MediaDownloadStrategy,
-    db_path: str | Path | None = None,
     credential: Any | None = None,
 ) -> MediaResult:
-    if db_path is not None:
-        strategy = strategy.with_sqlite_path(db_path)
-    return _stream_media_to_store(bvid=bvid, strategy=strategy, store=_store(strategy.sqlite_file()), credential=credential)
+    gcp_config = _resolve_gcp_config(strategy=strategy)
+    return _stream_media_to_store(bvid=bvid, strategy=strategy, store=_store(gcp_config), credential=credential)
 
 
 def crawl_media_assets(
     bvid: str,
     strategy: MediaDownloadStrategy | None = None,
-    db_path: str | Path = DEFAULT_DB_PATH,
+    gcp_config: GCPStorageConfig | None = None,
     max_height: int = 1080,
     chunk_size_mb: int = 4,
     credential: Any | None = None,
 ) -> MediaResult:
+    resolved_config = _resolve_gcp_config(gcp_config, strategy)
     active_strategy = strategy or MediaDownloadStrategy(
         max_height=max_height,
         chunk_size_mb=chunk_size_mb,
-        sqlite_path=str(db_path),
+        storage_backend="gcs",
+        gcp_config=resolved_config,
     )
     return stream_media_to_store(bvid=bvid, strategy=active_strategy, credential=credential)
 
@@ -93,12 +101,13 @@ def crawl_full_video_bundle(
     *,
     enable_media: bool = True,
     comment_limit: int = 10,
-    db_path: str | Path = DEFAULT_DB_PATH,
+    gcp_config: GCPStorageConfig | None = None,
     max_height: int = 1080,
     chunk_size_mb: int = 4,
     media_strategy: MediaDownloadStrategy | None = None,
     credential: Any | None = None,
 ) -> FullCrawlSummary:
+    resolved_config = _resolve_gcp_config(gcp_config, media_strategy)
     errors: list[str] = []
     meta_result = None
     stat_snapshot = None
@@ -106,14 +115,14 @@ def crawl_full_video_bundle(
     media_result = None
 
     try:
-        meta_result = crawl_video_meta(bvid, db_path=db_path, credential=credential)
+        meta_result = crawl_video_meta(bvid, gcp_config=resolved_config, credential=credential)
         meta_ok = True
     except Exception as exc:  # noqa: BLE001
         meta_ok = False
         errors.append(f"meta: {exc}")
 
     try:
-        stat_snapshot = crawl_stat_snapshot(bvid, db_path=db_path, credential=credential)
+        stat_snapshot = crawl_stat_snapshot(bvid, gcp_config=resolved_config, credential=credential)
         stat_ok = True
     except Exception as exc:  # noqa: BLE001
         stat_ok = False
@@ -123,7 +132,7 @@ def crawl_full_video_bundle(
         comment_snapshot = crawl_latest_comments(
             bvid,
             limit=comment_limit,
-            db_path=db_path,
+            gcp_config=resolved_config,
             credential=credential,
         )
         comment_ok = True
@@ -137,7 +146,7 @@ def crawl_full_video_bundle(
             media_result = crawl_media_assets(
                 bvid,
                 strategy=media_strategy,
-                db_path=db_path,
+                gcp_config=resolved_config,
                 max_height=max_height,
                 chunk_size_mb=chunk_size_mb,
                 credential=credential,
@@ -182,16 +191,17 @@ def crawl_bvid_list_from_csv(
     parallelism: int = 4,
     enable_media: bool = True,
     comment_limit: int = 10,
-    db_path: str | Path = DEFAULT_DB_PATH,
+    gcp_config: GCPStorageConfig | None = None,
     max_height: int = 1080,
     chunk_size_mb: int = 4,
     media_strategy: MediaDownloadStrategy | None = None,
     credential: Any | None = None,
 ) -> BatchCrawlReport:
+    resolved_config = _resolve_gcp_config(gcp_config, media_strategy)
     bvids = _read_bvids_from_csv(csv_path)
     run_id = uuid.uuid4().hex
     started_at = datetime.now()
-    store = _store(db_path)
+    store = _store(resolved_config)
     store.save_run_start(
         run_id,
         mode="batch_csv",
@@ -200,9 +210,10 @@ def crawl_bvid_list_from_csv(
             "parallelism": parallelism,
             "enable_media": enable_media,
             "comment_limit": comment_limit,
-            "db_path": str(db_path),
+            "bigquery_dataset": resolved_config.bigquery_dataset,
+            "gcs_bucket_name": resolved_config.gcs_bucket_name,
             "max_height": max_height,
-            "storage_backend": (media_strategy.storage_backend if media_strategy is not None else "sqlite"),
+            "storage_backend": (media_strategy.storage_backend if media_strategy is not None else "gcs"),
         },
     )
 
@@ -213,7 +224,7 @@ def crawl_bvid_list_from_csv(
             item_bvid,
             enable_media=enable_media,
             comment_limit=comment_limit,
-            db_path=db_path,
+            gcp_config=resolved_config,
             max_height=max_height,
             chunk_size_mb=chunk_size_mb,
             media_strategy=media_strategy,

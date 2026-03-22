@@ -188,43 +188,41 @@ class CommentSnapshot:
 
 
 @dataclass(slots=True)
-class OSSStorageConfig:
-    endpoint: str = ""
-    bucket_name: str = ""
-    access_key_id: str = ""
-    access_key_secret: str = ""
-    bucket_region: str = ""
+class GCPStorageConfig:
+    project_id: str = ""
+    bigquery_dataset: str = "bili_video_data_crawler"
+    gcs_bucket_name: str = ""
+    gcp_region: str = ""
+    credentials_path: str = ""
     object_prefix: str = "bilibili-media"
-    security_token: str = ""
     public_base_url: str = ""
 
     def is_enabled(self) -> bool:
-        return bool(
-            self.endpoint.strip()
-            and self.bucket_name.strip()
-            and self.access_key_id.strip()
-            and self.access_key_secret.strip()
-        )
-
-    def endpoint_with_scheme(self) -> str:
-        endpoint = self.endpoint.strip()
-        if not endpoint:
-            return ""
-        if endpoint.startswith(("http://", "https://")):
-            return endpoint
-        return f"https://{endpoint}"
+        return bool(self.bigquery_dataset.strip() and self.gcs_bucket_name.strip())
 
     def normalized_prefix(self) -> str:
         return self.object_prefix.strip().strip("/")
 
+    def endpoint_with_scheme(self) -> str:
+        return "https://storage.googleapis.com"
+
+    @property
+    def bucket_name(self) -> str:
+        return self.gcs_bucket_name.strip()
+
+    def build_gcs_uri(self, object_key: str) -> str:
+        key = object_key.lstrip("/")
+        return f"gs://{self.bucket_name}/{key}" if key else f"gs://{self.bucket_name}"
+
     def to_safe_dict(self) -> dict[str, Any]:
         return {
-            "endpoint": self.endpoint.strip(),
-            "bucket_name": self.bucket_name.strip(),
-            "bucket_region": self.bucket_region.strip(),
+            "project_id": self.project_id.strip(),
+            "bigquery_dataset": self.bigquery_dataset.strip(),
+            "gcs_bucket_name": self.bucket_name,
+            "gcp_region": self.gcp_region.strip(),
             "object_prefix": self.normalized_prefix(),
             "public_base_url": self.public_base_url.strip(),
-            "has_security_token": bool(self.security_token.strip()),
+            "has_credentials_path": bool(self.credentials_path.strip()),
         }
 
 
@@ -234,8 +232,8 @@ class MediaDownloadStrategy:
     chunk_size_mb: int = 4
     sqlite_path: str = "outputs/bili_video_data_crawler.db"
     request_timeout_seconds: int = 120
-    storage_backend: str = "sqlite"
-    oss_config: OSSStorageConfig | None = None
+    storage_backend: str = "gcs"
+    gcp_config: GCPStorageConfig | None = None
 
     def chunk_size_bytes(self) -> int:
         return max(1, self.chunk_size_mb) * 1024 * 1024
@@ -243,11 +241,18 @@ class MediaDownloadStrategy:
     def sqlite_file(self) -> Path:
         return Path(self.sqlite_path)
 
+    @property
+    def oss_config(self) -> GCPStorageConfig | None:
+        return self.gcp_config
+
     def use_oss_media(self) -> bool:
-        return self.storage_backend == "oss" and self.oss_config is not None and self.oss_config.is_enabled()
+        return self.use_gcs_media()
+
+    def use_gcs_media(self) -> bool:
+        return self.storage_backend == "gcs" and self.gcp_config is not None and self.gcp_config.is_enabled()
 
     def build_object_key(self, bvid: str, cid: int | None, asset_type: str) -> str:
-        prefix = self.oss_config.normalized_prefix() if self.oss_config else ""
+        prefix = self.gcp_config.normalized_prefix() if self.gcp_config else ""
         parts = [part for part in [prefix, bvid, str(cid or "na"), f"{asset_type}.m4s"] if part]
         return "/".join(parts)
 
@@ -258,7 +263,7 @@ class MediaDownloadStrategy:
             sqlite_path=str(sqlite_path),
             request_timeout_seconds=self.request_timeout_seconds,
             storage_backend=self.storage_backend,
-            oss_config=self.oss_config,
+            gcp_config=self.gcp_config,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -268,8 +273,11 @@ class MediaDownloadStrategy:
             "sqlite_path": self.sqlite_path,
             "request_timeout_seconds": self.request_timeout_seconds,
             "storage_backend": self.storage_backend,
-            "oss_config": self.oss_config.to_safe_dict() if self.oss_config else None,
+            "gcp_config": self.gcp_config.to_safe_dict() if self.gcp_config else None,
         }
+
+
+OSSStorageConfig = GCPStorageConfig
 
 
 @dataclass(slots=True)

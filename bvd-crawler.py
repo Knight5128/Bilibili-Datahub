@@ -24,8 +24,8 @@ from bili_pipeline.field_reference import (
     build_field_reference_rows,
     sync_field_reference_markdown,
 )
-from bili_pipeline.models import MediaDownloadStrategy, OSSStorageConfig
-from bili_pipeline.storage import OSSMediaStore, SQLiteCrawlerStore
+from bili_pipeline.models import GCPStorageConfig, MediaDownloadStrategy
+from bili_pipeline.storage import BigQueryCrawlerStore, GcsMediaStore
 from bili_pipeline.utils.bilibili_jump import (
     build_owner_space_url,
     build_video_url,
@@ -39,6 +39,16 @@ from bili_pipeline.utils.streamlit_night_sky import render_night_sky_background
 APP_DIR = Path(__file__).resolve().parent
 LOGO_PATH = APP_DIR / "assets" / "logos" / "bvd-crawler.png"
 FIELD_REFERENCE_DOC_PATH = APP_DIR / FIELD_REFERENCE_DOC_NAME
+LOCAL_GCP_CONFIG_PATH = APP_DIR / ".local" / "bvd-crawler.gcp.config.json"
+DEFAULT_GCP_CONFIG = {
+    "gcp_project_id": "",
+    "bigquery_dataset": "bili_video_data_crawler",
+    "gcs_bucket_name": "",
+    "gcp_region": "",
+    "credentials_path": "",
+    "gcs_object_prefix": "bilibili-media",
+    "gcs_public_base_url": "",
+}
 
 
 def _build_logo_data_uri(logo_path: Path) -> str | None:
@@ -117,39 +127,73 @@ def _build_credential_from_cookie(cookie_text: str) -> Credential | None:
     return Credential(sessdata=sessdata, bili_jct=bili_jct, buvid3=buvid3 or "")
 
 
+def _load_persisted_gcp_config() -> dict[str, str]:
+    config = DEFAULT_GCP_CONFIG.copy()
+    if not LOCAL_GCP_CONFIG_PATH.exists():
+        return config
+    try:
+        payload = json.loads(LOCAL_GCP_CONFIG_PATH.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return config
+    if not isinstance(payload, dict):
+        return config
+    for key in DEFAULT_GCP_CONFIG:
+        value = payload.get(key, config[key])
+        config[key] = value if isinstance(value, str) else str(value)
+    return config
+
+
+def _save_persisted_gcp_config(config: dict[str, str]) -> Path:
+    LOCAL_GCP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    LOCAL_GCP_CONFIG_PATH.write_text(
+        json.dumps(config, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return LOCAL_GCP_CONFIG_PATH
+
+
+def _init_gcp_config_state() -> None:
+    if st.session_state.get("gcp_config_state_initialized"):
+        return
+    persisted_config = _load_persisted_gcp_config()
+    for key, default_value in persisted_config.items():
+        st.session_state.setdefault(key, default_value)
+    st.session_state["gcp_config_state_initialized"] = True
+
+
+def _collect_gcp_config_from_state() -> dict[str, str]:
+    return {
+        key: str(st.session_state.get(key, DEFAULT_GCP_CONFIG[key])).strip()
+        for key in DEFAULT_GCP_CONFIG
+    }
+
+
 def _build_media_strategy(
     *,
-    db_path: str,
     max_height: int,
     chunk_size_mb: int,
-    storage_backend: str,
-    oss_endpoint: str,
-    oss_bucket_name: str,
-    oss_bucket_region: str,
-    oss_access_key_id: str,
-    oss_access_key_secret: str,
-    oss_security_token: str,
-    oss_object_prefix: str,
-    oss_public_base_url: str,
+    gcp_project_id: str,
+    bigquery_dataset: str,
+    gcs_bucket_name: str,
+    gcp_region: str,
+    credentials_path: str,
+    gcs_object_prefix: str,
+    gcs_public_base_url: str,
 ) -> MediaDownloadStrategy:
-    oss_config = None
-    if storage_backend == "oss":
-        oss_config = OSSStorageConfig(
-            endpoint=oss_endpoint,
-            bucket_name=oss_bucket_name,
-            bucket_region=oss_bucket_region,
-            access_key_id=oss_access_key_id,
-            access_key_secret=oss_access_key_secret,
-            security_token=oss_security_token,
-            object_prefix=oss_object_prefix,
-            public_base_url=oss_public_base_url,
-        )
+    gcp_config = GCPStorageConfig(
+        project_id=gcp_project_id,
+        bigquery_dataset=bigquery_dataset,
+        gcs_bucket_name=gcs_bucket_name,
+        gcp_region=gcp_region,
+        credentials_path=credentials_path,
+        object_prefix=gcs_object_prefix,
+        public_base_url=gcs_public_base_url,
+    )
     return MediaDownloadStrategy(
         max_height=max_height,
         chunk_size_mb=chunk_size_mb,
-        sqlite_path=db_path,
-        storage_backend=storage_backend,
-        oss_config=oss_config,
+        storage_backend="gcs",
+        gcp_config=gcp_config,
     )
 
 
@@ -196,30 +240,23 @@ def _render_field_reference_panel(field_reference_df: pd.DataFrame) -> None:
 
 def _load_asset_bytes(
     *,
-    store: SQLiteCrawlerStore,
     asset_row: dict,
-    target_bvid: str,
     strategy: MediaDownloadStrategy,
 ) -> bytes:
-    cid = asset_row.get("cid")
-    asset_type = asset_row.get("asset_type")
-    if asset_row.get("storage_backend") != "oss":
-        return store.read_asset_bytes(target_bvid, cid, asset_type)
+    if not strategy.use_gcs_media() or strategy.gcp_config is None:
+        raise ValueError("当前未启用可用的 Google Cloud Storage 配置，无法回读远程媒体文件。")
 
-    if not strategy.use_oss_media() or strategy.oss_config is None:
-        raise ValueError("当前未启用可用的阿里云 OSS 配置，无法回读远程媒体文件。")
-
-    active_bucket = strategy.oss_config.bucket_name.strip()
+    active_bucket = strategy.gcp_config.bucket_name.strip()
     row_bucket = str(asset_row.get("bucket_name") or "").strip()
     if row_bucket and active_bucket and row_bucket != active_bucket:
-        raise ValueError("当前 OSS Bucket 与该资产记录不一致，请切换为正确的 Bucket 后再导出。")
+        raise ValueError("当前 GCS Bucket 与该资产记录不一致，请切换为正确的 Bucket 后再导出。")
 
-    active_endpoint = strategy.oss_config.endpoint_with_scheme().rstrip("/")
+    active_endpoint = strategy.gcp_config.endpoint_with_scheme().rstrip("/")
     row_endpoint = str(asset_row.get("storage_endpoint") or "").strip().rstrip("/")
     if row_endpoint and active_endpoint and row_endpoint != active_endpoint:
-        raise ValueError("当前 OSS Endpoint 与该资产记录不一致，请切换为正确的 Endpoint 后再导出。")
+        raise ValueError("当前 GCS Endpoint 与该资产记录不一致，请切换为正确的 Endpoint 后再导出。")
 
-    return OSSMediaStore(strategy.oss_config).download_object_bytes(str(asset_row.get("object_key") or ""))
+    return GcsMediaStore(strategy.gcp_config).download_object_bytes(str(asset_row.get("object_key") or ""))
 
 
 page_config = {"page_title": "Bilibili Video Data Crawler", "layout": "wide"}
@@ -229,92 +266,88 @@ st.set_page_config(**page_config)
 _inject_field_reference_panel_styles()
 render_night_sky_background()
 _render_centered_header("Bilibili Video Data Crawler", LOGO_PATH)
+_init_gcp_config_state()
 st.markdown(
-    "<p style='text-align: center; margin-bottom: 1rem;'>基于 bilibili-api 的B站视频数据（元数据/动态互动/评论/多媒体）采集工具，支持单视频抓取、批量 CSV 抓取、四类数据接口单独调试与 SQLite 元数据 / 阿里云 OSS 媒体存储查看。</p>",
+    "<p style='text-align: center; margin-bottom: 1rem;'>基于 bilibili-api 的B站视频数据（元数据/动态互动/评论/多媒体）采集工具，当前采用 BigQuery 存储结构化结果，并使用 Google Cloud Storage 沉淀视频/音频媒体文件，便于后续在 Google Colab 中直接加载与训练。</p>",
     unsafe_allow_html=True,
 )
 
 with st.sidebar:
     st.subheader("全局设置")
-    db_path = st.text_input("SQLite 存储路径", value=str(Path("outputs") / "bili_video_data_crawler.db"))
     comment_limit_default = st.number_input("默认评论条数", min_value=1, max_value=100, value=10, step=1)
     chunk_size_mb = st.number_input("媒体分块大小（MB）", min_value=1, max_value=64, value=4, step=1)
     max_height = st.number_input("媒体最大分辨率（高度）", min_value=360, max_value=2160, value=1080, step=120)
-    storage_backend = st.radio(
-        "媒体文件存储方式",
-        options=["sqlite", "oss"],
-        format_func=lambda item: "SQLite 分块存储（原模式）" if item == "sqlite" else "阿里云 OSS + SQLite 元数据",
-        help="结构化数据和运行记录始终写入本地 SQLite；此选项只控制视频/音频媒体文件存到哪里。",
-    )
     cookie_text = st.text_area(
         "可选：B 站 Cookie（提升评论与媒体抓取稳定性，仅在本地内存中使用）",
         value="",
         height=80,
         help="建议只粘贴包含 SESSDATA、bili_jct、buvid3 的子串，例如：SESSDATA=...; bili_jct=...; buvid3=...",
     )
-    st.caption("Cookie 和 OSS 密钥仅保存在当前 Streamlit 会话内存中，不会写入 SQLite。")
+    st.caption("B 站 Cookie 与 Google 凭证路径仅保存在当前 Streamlit 会话内存中，不会写入 BigQuery。")
+    st.caption("当前版本固定采用 BigQuery + Google Cloud Storage，不再维护本地 SQLite / 阿里云 OSS 双存储。")
 
-    oss_endpoint = ""
-    oss_bucket_name = ""
-    oss_bucket_region = ""
-    oss_access_key_id = ""
-    oss_access_key_secret = ""
-    oss_security_token = ""
-    oss_object_prefix = "bilibili-media"
-    oss_public_base_url = ""
-    trigger_oss_test = False
-
-    if storage_backend == "oss":
-        st.divider()
-        st.subheader("阿里云 OSS 配置")
-        oss_endpoint = st.text_input(
-            "OSS Endpoint",
-            value="oss-cn-hangzhou.aliyuncs.com",
-            help="支持直接填写地域 Endpoint，例如 oss-cn-shanghai.aliyuncs.com，也可带 https:// 前缀。",
-        )
-        oss_bucket_name = st.text_input("Bucket 名称", value="")
-        oss_bucket_region = st.text_input("Bucket 所在地域（可选）", value="", help="例如 cn-shanghai。若 SDK 已能从 Endpoint 推断，可留空。")
-        oss_object_prefix = st.text_input("对象前缀", value="bilibili-media", help="上传到 OSS 的对象 key 前缀。")
-        oss_public_base_url = st.text_input(
-            "公共访问基础 URL（可选）",
-            value="",
-            help="若 Bucket 配置了 CDN 或公网自定义域名，可填入形如 https://cdn.example.com 的基础地址。",
-        )
-        oss_access_key_id = st.text_input("AccessKey ID", value="")
-        oss_access_key_secret = st.text_input("AccessKey Secret", value="", type="password")
-        oss_security_token = st.text_input("Security Token（可选）", value="", type="password")
-        trigger_oss_test = st.button("测试 OSS 连接", width="stretch")
+    st.divider()
+    st.subheader("Google Cloud 配置")
+    gcp_project_id = st.text_input("GCP Project ID", key="gcp_project_id", help="例如 your-project-id；若本机已配置默认项目，也可留空让客户端自动推断。")
+    bigquery_dataset = st.text_input("BigQuery Dataset", key="bigquery_dataset", help="用于存放结构化表，如 videos、video_stat_snapshots、assets。")
+    gcs_bucket_name = st.text_input("GCS Bucket 名称", key="gcs_bucket_name", help="用于存放视频/音频媒体文件。")
+    gcp_region = st.text_input("GCP Region（可选）", key="gcp_region", help="例如 asia-east1、us-central1。新建 BigQuery Dataset 时会使用该区域。")
+    credentials_path = st.text_input(
+        "服务账号 JSON 路径（可选）",
+        key="credentials_path",
+        help="若留空，则使用 Application Default Credentials（ADC）。填写时请提供本机可访问的服务账号 JSON 文件路径。",
+    )
+    gcs_object_prefix = st.text_input("GCS 对象前缀", key="gcs_object_prefix", help="上传到 GCS 的对象 key 前缀。")
+    gcs_public_base_url = st.text_input(
+        "公共访问基础 URL（可选）",
+        key="gcs_public_base_url",
+        help="若 Bucket 配置了 CDN 或公开域名，可填入形如 https://storage.googleapis.com/your-bucket 的基础地址。",
+    )
+    trigger_save_config = st.button("保存配置", width="stretch")
+    trigger_gcp_test = st.button("测试 GCP 连接", width="stretch")
 
 active_credential = _build_credential_from_cookie(cookie_text)
 active_media_strategy = _build_media_strategy(
-    db_path=db_path,
     max_height=int(max_height),
     chunk_size_mb=int(chunk_size_mb),
-    storage_backend=storage_backend,
-    oss_endpoint=oss_endpoint,
-    oss_bucket_name=oss_bucket_name,
-    oss_bucket_region=oss_bucket_region,
-    oss_access_key_id=oss_access_key_id,
-    oss_access_key_secret=oss_access_key_secret,
-    oss_security_token=oss_security_token,
-    oss_object_prefix=oss_object_prefix,
-    oss_public_base_url=oss_public_base_url,
+    gcp_project_id=gcp_project_id,
+    bigquery_dataset=bigquery_dataset,
+    gcs_bucket_name=gcs_bucket_name,
+    gcp_region=gcp_region,
+    credentials_path=credentials_path,
+    gcs_object_prefix=gcs_object_prefix,
+    gcs_public_base_url=gcs_public_base_url,
 )
 _sync_field_reference_doc_once()
 
-if trigger_oss_test:
-    if not active_media_strategy.use_oss_media() or active_media_strategy.oss_config is None:
-        st.sidebar.warning("请先完整填写 OSS Endpoint、Bucket、AccessKey 等配置后再测试连接。")
+if trigger_save_config:
+    try:
+        saved_path = _save_persisted_gcp_config(_collect_gcp_config_from_state())
+    except Exception as exc:  # noqa: BLE001
+        st.sidebar.error(f"保存配置失败：{exc}")
+    else:
+        st.sidebar.success(f"配置已保存到本地：{saved_path}")
+
+if trigger_gcp_test:
+    if not active_media_strategy.use_gcs_media() or active_media_strategy.gcp_config is None:
+        st.sidebar.warning("请先完整填写 BigQuery Dataset 与 GCS Bucket；若未配置 ADC，也请提供服务账号 JSON 路径。")
     else:
         try:
-            oss_info = OSSMediaStore(active_media_strategy.oss_config).test_connection()
+            bq_info = BigQueryCrawlerStore(active_media_strategy.gcp_config).test_connection()
+            gcs_info = GcsMediaStore(active_media_strategy.gcp_config).test_connection()
         except Exception as exc:  # noqa: BLE001
-            st.sidebar.error(f"OSS 连接测试失败：{exc}")
+            st.sidebar.error(f"GCP 连接测试失败：{exc}")
         else:
-            st.sidebar.success("OSS 连接成功。")
-            st.sidebar.json(oss_info)
+            st.sidebar.success("GCP 连接成功。")
+            st.sidebar.json({"bigquery": bq_info, "gcs": gcs_info})
 
-store = SQLiteCrawlerStore(db_path)
+store = None
+store_init_error = None
+if active_media_strategy.gcp_config is not None and active_media_strategy.gcp_config.is_enabled():
+    try:
+        store = BigQueryCrawlerStore(active_media_strategy.gcp_config)
+    except Exception as exc:  # noqa: BLE001
+        store_init_error = str(exc)
 field_reference_df = _get_field_reference_df()
 
 main_col, reference_col = st.columns([3.4, 1.6], gap="large")
@@ -326,7 +359,7 @@ with reference_col:
 
 with main_col:
     tab_single, tab_batch, tab_interfaces, tab_db, tab_quick_jump = st.tabs(
-        ["单 bvid 全流程", "CSV 批量抓取", "四类接口调试", "SQLite 数据查看", "快捷跳转"]
+        ["单 bvid 全流程", "CSV 批量抓取", "四类接口调试", "BigQuery / GCS 数据查看", "快捷跳转"]
     )
 
 
@@ -352,8 +385,14 @@ def _show_meta_result(result) -> None:
         st.json(result.raw_payload)
 
 
+def _gcp_ready() -> bool:
+    return store is not None and store_init_error is None
+
+
 with tab_single:
     st.subheader("单 bvid 全流程")
+    if store_init_error:
+        st.warning(f"当前 GCP 存储尚未就绪：{store_init_error}")
     col_a, col_b = st.columns([2, 1])
     with col_a:
         single_bvid = st.text_input("输入 bvid", value="")
@@ -361,7 +400,9 @@ with tab_single:
         enable_media_single = st.checkbox("抓取媒体", value=True)
 
     if st.button("开始单视频顺序抓取", width="stretch"):
-        if not single_bvid.strip():
+        if not _gcp_ready():
+            st.warning("请先在侧边栏完成 Google Cloud 配置并确保连接可用。")
+        elif not single_bvid.strip():
             st.warning("请先输入 bvid。")
         else:
             with st.spinner("正在顺序执行 Meta -> Stat -> Comment -> Media ..."):
@@ -370,7 +411,7 @@ with tab_single:
                         single_bvid.strip(),
                         enable_media=enable_media_single,
                         comment_limit=int(comment_limit_default),
-                        db_path=db_path,
+                        gcp_config=active_media_strategy.gcp_config,
                         max_height=int(max_height),
                         chunk_size_mb=int(chunk_size_mb),
                         media_strategy=active_media_strategy,
@@ -388,6 +429,8 @@ with tab_single:
 
 with tab_batch:
     st.subheader("CSV 批量抓取")
+    if store_init_error:
+        st.warning(f"当前 GCP 存储尚未就绪：{store_init_error}")
     uploaded = st.file_uploader("上传包含 `bvid` 列的 CSV 文件", type=["csv"], accept_multiple_files=False)
     parallelism = st.number_input("并发度", min_value=1, max_value=16, value=2, step=1)
     enable_media_batch = st.checkbox("批量任务抓取媒体", value=False)
@@ -403,10 +446,12 @@ with tab_batch:
             st.dataframe(preview_df.head(20), width="stretch", hide_index=True)
 
     if st.button("开始批量抓取", width="stretch"):
-        if uploaded is None:
+        if not _gcp_ready():
+            st.warning("请先在侧边栏完成 Google Cloud 配置并确保连接可用。")
+        elif uploaded is None:
             st.warning("请先上传 CSV 文件。")
         else:
-            tmp_path = Path(db_path).parent / "_uploaded_bvid_batch.csv"
+            tmp_path = Path("outputs") / "_uploaded_bvid_batch.csv"
             tmp_path.parent.mkdir(parents=True, exist_ok=True)
             tmp_path.write_bytes(uploaded.getbuffer())
 
@@ -417,7 +462,7 @@ with tab_batch:
                         parallelism=int(parallelism),
                         enable_media=enable_media_batch,
                         comment_limit=int(comment_limit_default),
-                        db_path=db_path,
+                        gcp_config=active_media_strategy.gcp_config,
                         max_height=int(max_height),
                         chunk_size_mb=int(chunk_size_mb),
                         media_strategy=active_media_strategy,
@@ -432,83 +477,101 @@ with tab_batch:
 
 with tab_interfaces:
     st.subheader("四类接口调试")
+    if store_init_error:
+        st.warning(f"当前 GCP 存储尚未就绪：{store_init_error}")
     meta_tab, stat_tab, comment_tab, media_tab = st.tabs(["Meta", "Stat", "Comment", "Media"])
 
     with meta_tab:
         meta_bvid = st.text_input("Meta: bvid", key="meta_bvid")
         if st.button("调用 Meta 接口"):
-            try:
-                result = crawl_video_meta(meta_bvid.strip(), db_path=db_path, credential=active_credential)
-            except Exception as exc:  # noqa: BLE001
-                st.error(f"Meta 接口调用失败：{exc}")
+            if not _gcp_ready():
+                st.warning("请先配置可用的 BigQuery / GCS 连接。")
             else:
-                st.success("Meta 接口调用成功。")
-                _show_meta_result(result)
+                try:
+                    result = crawl_video_meta(meta_bvid.strip(), gcp_config=active_media_strategy.gcp_config, credential=active_credential)
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Meta 接口调用失败：{exc}")
+                else:
+                    st.success("Meta 接口调用成功。")
+                    _show_meta_result(result)
 
     with stat_tab:
         stat_bvid = st.text_input("Stat: bvid", key="stat_bvid")
         if st.button("调用 Stat 接口"):
-            try:
-                result = crawl_stat_snapshot(stat_bvid.strip(), db_path=db_path, credential=active_credential)
-            except Exception as exc:  # noqa: BLE001
-                st.error(f"Stat 接口调用失败：{exc}")
+            if not _gcp_ready():
+                st.warning("请先配置可用的 BigQuery / GCS 连接。")
             else:
-                st.success("Stat 接口调用成功。")
-                _show_json("StatSnapshot", result.to_dict())
+                try:
+                    result = crawl_stat_snapshot(stat_bvid.strip(), gcp_config=active_media_strategy.gcp_config, credential=active_credential)
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Stat 接口调用失败：{exc}")
+                else:
+                    st.success("Stat 接口调用成功。")
+                    _show_json("StatSnapshot", result.to_dict())
 
     with comment_tab:
         comment_bvid = st.text_input("Comment: bvid", key="comment_bvid")
         comment_limit = st.number_input("Comment: limit", min_value=1, max_value=100, value=int(comment_limit_default), step=1)
         if st.button("调用 Comment 接口"):
-            try:
-                result = crawl_latest_comments(
-                    comment_bvid.strip(),
-                    limit=int(comment_limit),
-                    db_path=db_path,
-                    credential=active_credential,
-                )
-            except Exception as exc:  # noqa: BLE001
-                st.error(f"Comment 接口调用失败：{exc}")
+            if not _gcp_ready():
+                st.warning("请先配置可用的 BigQuery / GCS 连接。")
             else:
-                st.success("Comment 接口调用成功。")
-                _show_json("CommentSnapshot", result.to_dict())
+                try:
+                    result = crawl_latest_comments(
+                        comment_bvid.strip(),
+                        limit=int(comment_limit),
+                        gcp_config=active_media_strategy.gcp_config,
+                        credential=active_credential,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Comment 接口调用失败：{exc}")
+                else:
+                    st.success("Comment 接口调用成功。")
+                    _show_json("CommentSnapshot", result.to_dict())
 
     with media_tab:
         media_bvid = st.text_input("Media: bvid", key="media_bvid")
         use_streaming_api = st.checkbox("使用 stream_media_to_store", value=True)
         if st.button("调用 Media 接口"):
-            try:
-                if use_streaming_api:
-                    result = stream_media_to_store(
-                        media_bvid.strip(),
-                        strategy=active_media_strategy,
-                        credential=active_credential,
-                    )
-                else:
-                    result = crawl_media_assets(
-                        media_bvid.strip(),
-                        strategy=active_media_strategy,
-                        db_path=db_path,
-                        max_height=int(max_height),
-                        chunk_size_mb=int(chunk_size_mb),
-                        credential=active_credential,
-                    )
-            except Exception as exc:  # noqa: BLE001
-                st.error(f"Media 接口调用失败：{exc}")
+            if not _gcp_ready():
+                st.warning("请先配置可用的 BigQuery / GCS 连接。")
             else:
-                st.success("Media 接口调用成功。")
-                _show_json("MediaResult", result.to_dict())
+                try:
+                    if use_streaming_api:
+                        result = stream_media_to_store(
+                            media_bvid.strip(),
+                            strategy=active_media_strategy,
+                            credential=active_credential,
+                        )
+                    else:
+                        result = crawl_media_assets(
+                            media_bvid.strip(),
+                            strategy=active_media_strategy,
+                            gcp_config=active_media_strategy.gcp_config,
+                            max_height=int(max_height),
+                            chunk_size_mb=int(chunk_size_mb),
+                            credential=active_credential,
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Media 接口调用失败：{exc}")
+                else:
+                    st.success("Media 接口调用成功。")
+                    _show_json("MediaResult", result.to_dict())
 
 
 with tab_db:
-    st.subheader("SQLite 数据查看")
-    st.caption("结构化数据、评论快照、统计快照与运行记录始终保存在 SQLite；若媒体选择 OSS，SQLite 中保存的是对象元数据与定位信息。")
+    st.subheader("BigQuery / GCS 数据查看")
+    st.caption("结构化数据、评论快照、统计快照与运行记录保存在 BigQuery；媒体资产记录中的对象键指向 GCS 中的真实视频/音频文件。")
+    if store_init_error:
+        st.warning(f"当前 GCP 存储尚未就绪：{store_init_error}")
     inspect_bvid = st.text_input("输入要查看的 bvid", value="")
     db_view_col, asset_view_col = st.columns(2)
 
     if db_view_col.button("查看该 bvid 的结构化数据", width="stretch"):
         target_bvid = inspect_bvid.strip()
-        if not target_bvid:
+        if not _gcp_ready():
+            st.warning("请先完成 Google Cloud 配置并建立连接。")
+        elif not target_bvid:
             st.warning("请先输入 bvid。")
         else:
             try:
@@ -532,70 +595,70 @@ with tab_db:
                             st.json(comment_row)
 
     if asset_view_col.button("查看该 bvid 的媒体资产", width="stretch"):
-        try:
-            target_bvid = inspect_bvid.strip()
-            asset_rows = store.fetch_all_asset_rows(target_bvid)
-        except Exception as exc:  # noqa: BLE001
-            st.error(f"读取数据库失败：{exc}")
+        target_bvid = inspect_bvid.strip()
+        if not _gcp_ready():
+            st.warning("请先完成 Google Cloud 配置并建立连接。")
+        elif not target_bvid:
+            st.warning("请先输入 bvid。")
         else:
-            if not asset_rows:
-                st.info("当前数据库中没有这个 bvid 的媒体资产记录。")
+            try:
+                asset_rows = store.fetch_all_asset_rows(target_bvid)
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"读取 BigQuery 失败：{exc}")
             else:
-                st.dataframe(pd.DataFrame(asset_rows), width="stretch", hide_index=True)
+                if not asset_rows:
+                    st.info("当前 BigQuery 中没有这个 bvid 的媒体资产记录。")
+                else:
+                    st.dataframe(pd.DataFrame(asset_rows), width="stretch", hide_index=True)
 
-                with st.expander("导出该 bvid 的媒体文件为本地文件"):
-                    video_row = next((row for row in asset_rows if row.get("asset_type") == "video"), None)
-                    audio_row = next((row for row in asset_rows if row.get("asset_type") == "audio"), None)
+                    with st.expander("导出该 bvid 的媒体文件为本地文件"):
+                        video_row = next((row for row in asset_rows if row.get("asset_type") == "video"), None)
+                        audio_row = next((row for row in asset_rows if row.get("asset_type") == "audio"), None)
 
-                    if not video_row and not audio_row:
-                        st.info("当前 bvid 暂无可导出的媒体资产。")
-                    else:
-                        if video_row:
-                            try:
-                                video_bytes = _load_asset_bytes(
-                                    store=store,
-                                    asset_row=video_row,
-                                    target_bvid=target_bvid,
-                                    strategy=active_media_strategy,
-                                )
-                            except Exception as exc:  # noqa: BLE001
-                                st.warning(f"视频文件导出失败：{exc}")
-                            else:
-                                if video_bytes:
-                                    st.download_button(
-                                        "下载视频文件（.m4s，按当前最高允许清晰度）",
-                                        data=video_bytes,
-                                        file_name=f"{target_bvid}_{video_row.get('cid') or 'na'}_video.m4s",
-                                        mime="video/mp4",
+                        if not video_row and not audio_row:
+                            st.info("当前 bvid 暂无可导出的媒体资产。")
+                        else:
+                            if video_row:
+                                try:
+                                    video_bytes = _load_asset_bytes(
+                                        asset_row=video_row,
+                                        strategy=active_media_strategy,
                                     )
-                        if audio_row:
-                            try:
-                                audio_bytes = _load_asset_bytes(
-                                    store=store,
-                                    asset_row=audio_row,
-                                    target_bvid=target_bvid,
-                                    strategy=active_media_strategy,
-                                )
-                            except Exception as exc:  # noqa: BLE001
-                                st.warning(f"音频文件导出失败：{exc}")
-                            else:
-                                if audio_bytes:
-                                    st.download_button(
-                                        "下载音频文件（.m4s）",
-                                        data=audio_bytes,
-                                        file_name=f"{target_bvid}_{audio_row.get('cid') or 'na'}_audio.m4s",
-                                        mime="audio/mp4",
+                                except Exception as exc:  # noqa: BLE001
+                                    st.warning(f"视频文件导出失败：{exc}")
+                                else:
+                                    if video_bytes:
+                                        st.download_button(
+                                            "下载视频文件（.m4s，按当前最高允许清晰度）",
+                                            data=video_bytes,
+                                            file_name=f"{target_bvid}_{video_row.get('cid') or 'na'}_video.m4s",
+                                            mime="video/mp4",
+                                        )
+                            if audio_row:
+                                try:
+                                    audio_bytes = _load_asset_bytes(
+                                        asset_row=audio_row,
+                                        strategy=active_media_strategy,
                                     )
+                                except Exception as exc:  # noqa: BLE001
+                                    st.warning(f"音频文件导出失败：{exc}")
+                                else:
+                                    if audio_bytes:
+                                        st.download_button(
+                                            "下载音频文件（.m4s）",
+                                            data=audio_bytes,
+                                            file_name=f"{target_bvid}_{audio_row.get('cid') or 'na'}_audio.m4s",
+                                            mime="audio/mp4",
+                                        )
 
-    st.caption("提示：当前界面显示的是 SQLite 中的媒体元数据记录；若媒体已存入 OSS，可在侧边栏填入同一 Bucket 的凭证后直接回读导出。")
+    st.caption("提示：当前界面展示的是 BigQuery 中的媒体元数据记录；实际视频/音频对象存放在 GCS，可直接按当前配置回读导出。")
     st.code(
         json.dumps(
             {
-                "db_path": db_path,
                 "chunk_size_mb": int(chunk_size_mb),
                 "max_height": int(max_height),
                 "storage_backend": active_media_strategy.storage_backend,
-                "oss_config": active_media_strategy.oss_config.to_safe_dict() if active_media_strategy.oss_config else None,
+                "gcp_config": active_media_strategy.gcp_config.to_safe_dict() if active_media_strategy.gcp_config else None,
             },
             ensure_ascii=False,
             indent=2,

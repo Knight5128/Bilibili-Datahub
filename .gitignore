@@ -16,6 +16,7 @@ outputs/
 .env
 .env.*
 .streamlit/secrets.toml
+.local/
 
 .DS_Store
 Thumbs.db

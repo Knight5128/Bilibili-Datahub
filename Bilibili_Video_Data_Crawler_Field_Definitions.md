@@ -260,8 +260,8 @@
 | --- | --- | --- | --- | --- |
 | `bvid` | 视频唯一标识 | 离散 | 媒体抓取结果对应的视频 BVID。 | `BV1xx411c7mD` |
 | `cid` | 媒体对应 CID | 离散 | 此次媒体抓取使用的播放段 CID。 | `1486239001` |
-| `video_object_key` | 视频对象键 | 文本 | 视频流文件在 SQLite / OSS 中的定位键。 | `bilibili-media/BV1xx411c7mD/1486239001/video.m4s` |
-| `audio_object_key` | 音频对象键 | 文本 | 音频流文件在 SQLite / OSS 中的定位键。 | `bilibili-media/BV1xx411c7mD/1486239001/audio.m4s` |
+| `video_object_key` | 视频对象键 | 文本 | 视频流文件在 GCS 中的对象 key。 | `bilibili-media/BV1xx411c7mD/1486239001/video.m4s` |
+| `audio_object_key` | 音频对象键 | 文本 | 音频流文件在 GCS 中的对象 key。 | `bilibili-media/BV1xx411c7mD/1486239001/audio.m4s` |
 | `video_format_selected` | 视频格式选择结果 | 文本 | 最终选中的视频清晰度或编码格式描述。 | `1920x1080_H264` |
 | `audio_format_selected` | 音频格式选择结果 | 文本 | 最终选中的音频码率或编码格式描述。 | `AUDIO_192K` |
 | `upload_session_id` | 媒体抓取会话 ID | 离散 | 同一轮媒体下载/上传流程的会话标识。 | `media-20260315-143355-BV1xx411c7mD` |
@@ -273,16 +273,16 @@
 | 变量名称 | 特征名称 | 特征类型 | 描述 | 具体数据或内容 |
 | --- | --- | --- | --- | --- |
 | `asset_type` | 媒体类型 | 离散 | 当前资产是视频流还是音频流。 | `video` |
-| `storage_backend` | 存储后端 | 离散 | 媒体文件实际写入的存储位置类型。 | `oss` |
+| `storage_backend` | 存储后端 | 离散 | 媒体文件实际写入的存储位置类型。 | `gcs` |
 | `object_key` | 对象键 | 文本 | 媒体对象在存储中的完整 key。 | `bilibili-media/BV1xx411c7mD/1486239001/video.m4s` |
 | `format_selected` | 选中媒体格式 | 文本 | 抓取阶段最终选中的媒体格式。 | `1920x1080_H264` |
 | `mime_type` | 媒体 MIME 类型 | 离散 | 媒体文件对应的 MIME 类型。 | `video/mp4` |
 | `file_size` | 文件大小 | 连续 | 媒体文件字节大小。 | `24876543` |
 | `sha256` | 文件哈希值 | 文本 | 媒体文件内容的 SHA256 摘要。 | `7bc3c1d8f1a0b21f...` |
 | `chunk_count` | 分块数量 | 连续 | 该媒体文件被切分存储的块数。 | `7` |
-| `bucket_name` | OSS Bucket 名称 | 离散 | 若使用 OSS，则记录目标 Bucket 名称。 | `thesis-bilibili-media` |
-| `storage_endpoint` | 存储端点 | 文本 | 当前媒体对象所在的 OSS Endpoint。 | `https://oss-cn-hangzhou.aliyuncs.com` |
-| `object_url` | 对象访问 URL | 文本 | 媒体对象的可访问 URL 或定位 URL。 | `https://cdn.example.com/bilibili-media/BV1xx411c7mD/1486239001/video.m4s` |
+| `bucket_name` | GCS Bucket 名称 | 离散 | 若使用 GCS，则记录目标 Bucket 名称。 | `thesis-bilibili-media` |
+| `storage_endpoint` | 存储端点 | 文本 | 当前媒体对象所在的 GCS API Endpoint。 | `https://storage.googleapis.com` |
+| `object_url` | 对象访问 URL | 文本 | 媒体对象的 `gs://` URI 或公开访问 URL。 | `gs://thesis-bilibili-media/bilibili-media/BV1xx411c7mD/1486239001/video.m4s` |
 | `etag` | 对象 ETag | 文本 | 对象上传后返回的 ETag。 | `F0E1D2C3B4A59687` |
 
 ### 维护约定

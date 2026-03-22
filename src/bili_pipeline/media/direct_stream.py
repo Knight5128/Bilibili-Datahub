@@ -8,7 +8,7 @@ import aiohttp
 from bilibili_api.video import AudioStreamDownloadURL, Video, VideoDownloadURLDataDetecter, VideoStreamDownloadURL
 
 from bili_pipeline.models import MediaAssetRef, MediaDownloadStrategy, MediaResult
-from bili_pipeline.storage import OSSMediaStore, SQLiteCrawlerStore
+from bili_pipeline.storage import BigQueryCrawlerStore, GcsMediaStore
 from bili_pipeline.utils import run_async
 
 
@@ -52,8 +52,8 @@ def _mime_type(asset_type: str) -> str:
 
 async def _stream_one_asset(
     *,
-    store: SQLiteCrawlerStore,
-    oss_store: OSSMediaStore | None,
+    store: BigQueryCrawlerStore,
+    gcs_store: GcsMediaStore,
     bvid: str,
     cid: int | None,
     asset_type: str,
@@ -68,10 +68,10 @@ async def _stream_one_asset(
     file_size = 0
     chunk_count = 0
     mime_type = _mime_type(asset_type)
-    storage_backend = "oss" if oss_store is not None else "sqlite"
-    bucket_name = oss_store.bucket_name if oss_store is not None else None
-    storage_endpoint = oss_store.endpoint if oss_store is not None else None
-    object_url = oss_store.build_object_url(object_key) if oss_store is not None else None
+    storage_backend = "gcs"
+    bucket_name = gcs_store.bucket_name
+    storage_endpoint = gcs_store.endpoint
+    object_url = gcs_store.build_object_url(object_key)
     asset_id = store.begin_media_asset(
         bvid=bvid,
         cid=cid,
@@ -86,13 +86,12 @@ async def _stream_one_asset(
         upload_session_id=upload_session_id,
         raw_payload={"url": url},
     )
-    multipart_session = None
-    if oss_store is not None:
-        multipart_session = oss_store.create_multipart_upload(
-            object_key=object_key,
-            mime_type=mime_type,
-            metadata={"bvid": bvid, "asset_type": asset_type},
-        )
+    multipart_session = gcs_store.create_multipart_upload(
+        object_key=object_key,
+        mime_type=mime_type,
+        metadata={"bvid": bvid, "asset_type": asset_type},
+        chunk_size=strategy.chunk_size_bytes(),
+    )
 
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -103,24 +102,18 @@ async def _stream_one_asset(
                         continue
                     sha.update(chunk)
                     file_size += len(chunk)
-                    if multipart_session is None:
-                        store.append_media_chunk(asset_id, chunk_count, chunk)
-                    else:
-                        multipart_session.upload_part(chunk)
+                    multipart_session.upload_part(chunk)
                     chunk_count += 1
     except Exception:
-        if multipart_session is not None:
-            try:
-                multipart_session.abort()
-            except Exception:  # noqa: BLE001
-                pass
+        try:
+            multipart_session.abort()
+        except Exception:  # noqa: BLE001
+            pass
         raise
 
-    etag = ""
-    if multipart_session is not None:
-        commit_result = multipart_session.complete()
-        object_url = commit_result.object_url
-        etag = commit_result.etag
+    commit_result = multipart_session.complete()
+    object_url = commit_result.object_url
+    etag = commit_result.etag
     store.finalize_media_asset(
         asset_id,
         file_size=file_size,
@@ -147,7 +140,7 @@ async def _stream_one_asset(
 async def _stream_media_async(
     bvid: str,
     strategy: MediaDownloadStrategy,
-    store: SQLiteCrawlerStore,
+    store: BigQueryCrawlerStore,
     credential: Any | None = None,
 ) -> MediaResult:
     video = Video(bvid=bvid) if credential is None else Video(bvid=bvid, credential=credential)
@@ -156,7 +149,9 @@ async def _stream_media_async(
     cid = pages[0].get("cid") if pages else None
     download_payload = await video.get_download_url(page_index=0)
     video_stream, audio_stream = _pick_streams(download_payload, strategy.max_height)
-    oss_store = OSSMediaStore(strategy.oss_config) if strategy.use_oss_media() and strategy.oss_config else None
+    if not strategy.use_gcs_media() or strategy.gcp_config is None:
+        raise ValueError("Google Cloud Storage 存储已启用，但 GCP 配置不完整。")
+    gcs_store = GcsMediaStore(strategy.gcp_config)
 
     if video_stream is None and audio_stream is None:
         raise RuntimeError("No downloadable media stream found for this bvid.")
@@ -168,7 +163,7 @@ async def _stream_media_async(
     if video_stream is not None:
         video_asset = await _stream_one_asset(
             store=store,
-            oss_store=oss_store,
+            gcs_store=gcs_store,
             bvid=bvid,
             cid=cid,
             asset_type="video",
@@ -182,7 +177,7 @@ async def _stream_media_async(
     if audio_stream is not None:
         audio_asset = await _stream_one_asset(
             store=store,
-            oss_store=oss_store,
+            gcs_store=gcs_store,
             bvid=bvid,
             cid=cid,
             asset_type="audio",
@@ -206,10 +201,12 @@ async def _stream_media_async(
 def stream_media_to_store(
     bvid: str,
     strategy: MediaDownloadStrategy,
-    store: SQLiteCrawlerStore | None = None,
+    store: BigQueryCrawlerStore | None = None,
     credential: Any | None = None,
 ) -> MediaResult:
-    if strategy.storage_backend == "oss" and not strategy.use_oss_media():
-        raise ValueError("阿里云 OSS 存储已启用，但配置不完整。请检查 Endpoint、Bucket 和 AccessKey。")
-    active_store = store or SQLiteCrawlerStore(strategy.sqlite_file())
+    if strategy.storage_backend == "gcs" and not strategy.use_gcs_media():
+        raise ValueError("Google Cloud Storage 存储已启用，但 GCP 配置不完整。请检查 Project、Dataset 和 Bucket。")
+    if strategy.gcp_config is None:
+        raise ValueError("缺少 GCP 配置，无法写入 GCS / BigQuery。")
+    active_store = store or BigQueryCrawlerStore(strategy.gcp_config)
     return run_async(_stream_media_async(bvid=bvid, strategy=strategy, store=active_store, credential=credential))
