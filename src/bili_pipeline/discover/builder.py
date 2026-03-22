@@ -26,14 +26,28 @@ class VideoPoolBuilder:
     partition_sources: list[SeedSource]
     author_source: AuthorVideoSource
 
-    def build(self, now: datetime | None = None) -> DiscoverResult:
+    def build(
+        self,
+        now: datetime | None = None,
+        *,
+        progress_callback: Callable[[int, int, int, int], None] | None = None,
+        error_callback: Callable[[int, int, int, Exception], None] | None = None,
+    ) -> DiscoverResult:
         candidates = self._collect_seed_candidates()
-        return self.build_from_seed_candidates(candidates, now=now)
+        return self.build_from_seed_candidates(
+            candidates,
+            now=now,
+            progress_callback=progress_callback,
+            error_callback=error_callback,
+        )
 
     def build_from_seed_candidates(
         self,
         candidates: list[CandidateVideo],
         now: datetime | None = None,
+        *,
+        progress_callback: Callable[[int, int, int, int], None] | None = None,
+        error_callback: Callable[[int, int, int, Exception], None] | None = None,
     ) -> DiscoverResult:
         current_time = now or datetime.now()
         since = current_time - timedelta(days=self.config.lookback_days)
@@ -53,10 +67,20 @@ class VideoPoolBuilder:
             return DiscoverResult(entries=entries, owner_mids=owner_mids)
 
         backfill_candidates: list[CandidateVideo] = []
-        for owner_mid in owner_mids:
-            for candidate in self.author_source.fetch_recent_videos(owner_mid, since):
+        total_owners = len(owner_mids)
+        for index, owner_mid in enumerate(owner_mids, start=1):
+            try:
+                author_candidates = self.author_source.fetch_recent_videos(owner_mid, since)
+            except Exception as exc:  # noqa: BLE001
+                if error_callback is not None:
+                    error_callback(owner_mid, index, total_owners, exc)
+                continue
+
+            for candidate in author_candidates:
                 if self._allow_candidate(candidate, enforce_tid=False):
                     backfill_candidates.append(candidate)
+            if progress_callback is not None:
+                progress_callback(owner_mid, index, total_owners, len(author_candidates))
 
         merged_backfill = self._merge_candidates(backfill_candidates, merged)
         entries = sorted(merged_backfill.values(), key=lambda item: item.discovered_at)

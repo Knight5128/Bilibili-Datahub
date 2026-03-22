@@ -221,17 +221,33 @@ class BilibiliHotSource(SeedSource):
     ps: int = 20
     fetch_all_pages: bool = False
     max_pages: int = 20
+    request_interval_seconds: float = 0.0
+    request_jitter_seconds: float = 0.0
+    max_retries: int = 0
+    retry_backoff_seconds: float = 3.0
 
     def fetch(self) -> list[CandidateVideo]:
         discovered_at = datetime.now()
         if not self.fetch_all_pages:
-            payload = _run_async(hot.get_hot_videos(pn=self.pn, ps=self.ps))
+            payload = _run_async_with_retry(
+                lambda: hot.get_hot_videos(pn=self.pn, ps=self.ps),
+                request_interval_seconds=self.request_interval_seconds,
+                request_jitter_seconds=self.request_jitter_seconds,
+                max_retries=self.max_retries,
+                retry_backoff_seconds=self.retry_backoff_seconds,
+            )
             source_ref = f"hot:pn={self.pn}:ps={self.ps}"
             return [_parse_seed_item(item, "hot", source_ref, discovered_at) for item in payload.get("list", [])]
 
         candidates: list[CandidateVideo] = []
         for page_num in range(self.pn, self.pn + self.max_pages):
-            payload = _run_async(hot.get_hot_videos(pn=page_num, ps=self.ps))
+            payload = _run_async_with_retry(
+                lambda page_num=page_num: hot.get_hot_videos(pn=page_num, ps=self.ps),
+                request_interval_seconds=self.request_interval_seconds,
+                request_jitter_seconds=self.request_jitter_seconds,
+                max_retries=self.max_retries,
+                retry_backoff_seconds=self.retry_backoff_seconds,
+            )
             items = payload.get("list", [])
             if not items:
                 break
@@ -245,10 +261,20 @@ class BilibiliHotSource(SeedSource):
 @dataclass(slots=True)
 class BilibiliWeeklyHotSource(SeedSource):
     week: int = 1
+    request_interval_seconds: float = 0.0
+    request_jitter_seconds: float = 0.0
+    max_retries: int = 0
+    retry_backoff_seconds: float = 3.0
 
     def fetch(self) -> list[CandidateVideo]:
         discovered_at = datetime.now()
-        payload = _run_async(hot.get_weekly_hot_videos(week=self.week))
+        payload = _run_async_with_retry(
+            lambda: hot.get_weekly_hot_videos(week=self.week),
+            request_interval_seconds=self.request_interval_seconds,
+            request_jitter_seconds=self.request_jitter_seconds,
+            max_retries=self.max_retries,
+            retry_backoff_seconds=self.retry_backoff_seconds,
+        )
         source_ref = f"weekly_hot:week={self.week}"
         return [_parse_seed_item(item, "weekly_hot", source_ref, discovered_at) for item in payload.get("list", [])]
 
@@ -270,11 +296,19 @@ class BilibiliZoneNewVideosSource(SeedSource):
     tid: int
     page_num: int = 1
     page_size: int = 10
+    request_interval_seconds: float = 0.0
+    request_jitter_seconds: float = 0.0
+    max_retries: int = 0
+    retry_backoff_seconds: float = 3.0
 
     def fetch(self) -> list[CandidateVideo]:
         discovered_at = datetime.now()
-        payload = _run_async(
-            video_zone.get_zone_new_videos(tid=self.tid, page_num=self.page_num, page_size=self.page_size)
+        payload = _run_async_with_retry(
+            lambda: video_zone.get_zone_new_videos(tid=self.tid, page_num=self.page_num, page_size=self.page_size),
+            request_interval_seconds=self.request_interval_seconds,
+            request_jitter_seconds=self.request_jitter_seconds,
+            max_retries=self.max_retries,
+            retry_backoff_seconds=self.retry_backoff_seconds,
         )
         source_ref = f"partition_new:tid={self.tid}:pn={self.page_num}:ps={self.page_size}"
         items = payload.get("archives", payload.get("items", []))
@@ -287,6 +321,10 @@ class BilibiliZoneRecentVideosSource(SeedSource):
     since: datetime
     page_size: int = 30
     max_pages: int = 200
+    request_interval_seconds: float = 0.0
+    request_jitter_seconds: float = 0.0
+    max_retries: int = 0
+    retry_backoff_seconds: float = 3.0
 
     def fetch(self) -> list[CandidateVideo]:
         discovered_at = datetime.now()
@@ -294,7 +332,17 @@ class BilibiliZoneRecentVideosSource(SeedSource):
         candidates: list[CandidateVideo] = []
 
         for page_num in range(1, self.max_pages + 1):
-            payload = _run_async(video_zone.get_zone_new_videos(tid=self.tid, page_num=page_num, page_size=self.page_size))
+            payload = _run_async_with_retry(
+                lambda page_num=page_num: video_zone.get_zone_new_videos(
+                    tid=self.tid,
+                    page_num=page_num,
+                    page_size=self.page_size,
+                ),
+                request_interval_seconds=self.request_interval_seconds,
+                request_jitter_seconds=self.request_jitter_seconds,
+                max_retries=self.max_retries,
+                retry_backoff_seconds=self.retry_backoff_seconds,
+            )
             items = payload.get("archives", payload.get("items", []))
             if not items:
                 break
