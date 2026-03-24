@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+from datetime import datetime
 from html import escape
 from pathlib import Path
 
@@ -10,6 +11,8 @@ import pandas as pd
 import streamlit as st
 
 from bili_pipeline.crawl_api import (
+    DEFAULT_VIDEO_DATA_OUTPUT_DIR,
+    TEST_CRAWLS_OUTPUT_DIR,
     crawl_bvid_list_from_csv,
     crawl_full_video_bundle,
     crawl_latest_comments,
@@ -259,6 +262,118 @@ def _load_asset_bytes(
     return GcsMediaStore(strategy.gcp_config).download_object_bytes(str(asset_row.get("object_key") or ""))
 
 
+def _display_path(path: Path) -> str:
+    try:
+        return path.relative_to(APP_DIR).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _make_safe_log_prefix(prefix: str) -> str:
+    safe_chars = []
+    for ch in prefix.strip():
+        safe_chars.append(ch if ch.isalnum() or ch in {"_", "-", "."} else "_")
+    return "".join(safe_chars).strip("_") or "task"
+
+
+def _save_text_log(log_dir: Path, prefix: str, content: str, finished_at: datetime) -> Path:
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{_make_safe_log_prefix(prefix)}_{finished_at.strftime('%Y%m%d_%H%M%S')}.log"
+    log_path.write_text(content.strip() + "\n", encoding="utf-8")
+    return log_path
+
+
+def _build_single_crawl_log_dir(started_at: datetime) -> Path:
+    return TEST_CRAWLS_OUTPUT_DIR / f"single_bvid_{started_at.strftime('%Y%m%d_%H%M%S')}"
+
+
+def _build_api_debug_log_dir(api_name: str, started_at: datetime) -> Path:
+    return TEST_CRAWLS_OUTPUT_DIR / f"{api_name}_api_{started_at.strftime('%Y%m%d_%H%M%S')}"
+
+
+def _build_media_uri_lines(media_result) -> list[str]:
+    if media_result is None:
+        return []
+    lines: list[str] = []
+    if media_result.video_asset and media_result.video_asset.bucket_name and media_result.video_asset.object_key:
+        lines.append(f"video_gcs_uri: gs://{media_result.video_asset.bucket_name}/{media_result.video_asset.object_key}")
+    if media_result.audio_asset and media_result.audio_asset.bucket_name and media_result.audio_asset.object_key:
+        lines.append(f"audio_gcs_uri: gs://{media_result.audio_asset.bucket_name}/{media_result.audio_asset.object_key}")
+    return lines
+
+
+def _build_single_crawl_log_content(
+    *,
+    bvid: str,
+    started_at: datetime,
+    finished_at: datetime,
+    enable_media: bool,
+    comment_limit: int,
+    summary=None,
+    error: Exception | None = None,
+) -> str:
+    lines = [
+        "Bilibili Video Data Crawler - Single BVID Crawl",
+        f"bvid: {bvid}",
+        f"started_at: {started_at.isoformat()}",
+        f"finished_at: {finished_at.isoformat()}",
+        f"enable_media: {enable_media}",
+        f"comment_limit: {comment_limit}",
+    ]
+    if error is not None:
+        lines.extend(
+            [
+                "status: failed",
+                f"error: {error}",
+            ]
+        )
+        return "\n".join(lines)
+    lines.append("status: success" if summary is not None and not summary.errors else "status: partial_success")
+    if summary is not None:
+        lines.extend(_build_media_uri_lines(summary.media_result))
+        lines.append("")
+        lines.append("summary_json:")
+        lines.append(json.dumps(summary.to_dict(), ensure_ascii=False, indent=2))
+    return "\n".join(lines)
+
+
+def _build_api_log_content(
+    *,
+    api_name: str,
+    bvid: str,
+    started_at: datetime,
+    finished_at: datetime,
+    payload: dict | None = None,
+    media_result=None,
+    error: Exception | None = None,
+    extra_lines: list[str] | None = None,
+) -> str:
+    lines = [
+        f"Bilibili Video Data Crawler - {api_name.upper()} API Debug",
+        f"api_name: {api_name}",
+        f"bvid: {bvid}",
+        f"started_at: {started_at.isoformat()}",
+        f"finished_at: {finished_at.isoformat()}",
+    ]
+    if extra_lines:
+        lines.extend(extra_lines)
+    if error is not None:
+        lines.extend(
+            [
+                "status: failed",
+                f"error: {error}",
+            ]
+        )
+        return "\n".join(lines)
+    lines.append("status: success")
+    lines.extend(_build_media_uri_lines(media_result))
+    if payload is not None:
+        lines.append("")
+        lines.append("payload_json:")
+        lines.append(json.dumps(payload, ensure_ascii=False, indent=2))
+    return "\n".join(lines)
+
+
 page_config = {"page_title": "Bilibili Video Data Crawler", "layout": "wide"}
 if LOGO_PATH.exists():
     page_config["page_icon"] = str(LOGO_PATH)
@@ -277,6 +392,14 @@ with st.sidebar:
     comment_limit_default = st.number_input("默认评论条数", min_value=1, max_value=100, value=10, step=1)
     chunk_size_mb = st.number_input("媒体分块大小（MB）", min_value=1, max_value=64, value=4, step=1)
     max_height = st.number_input("媒体最大分辨率（高度）", min_value=360, max_value=2160, value=1080, step=120)
+    consecutive_failure_limit = st.number_input(
+        "CSV 批量抓取连续失败暂停阈值",
+        min_value=1,
+        max_value=100,
+        value=10,
+        step=1,
+        help="当 CSV 批量抓取中连续有这么多条视频抓取失败时，程序会暂停本轮任务，并导出剔除已成功条目的 remaining CSV。",
+    )
     cookie_text = st.text_area(
         "可选：B 站 Cookie（提升评论与媒体抓取稳定性，仅在本地内存中使用）",
         value="",
@@ -285,6 +408,7 @@ with st.sidebar:
     )
     st.caption("B 站 Cookie 与 Google 凭证路径仅保存在当前 Streamlit 会话内存中，不会写入 BigQuery。")
     st.caption("当前版本固定采用 BigQuery + Google Cloud Storage，不再维护本地 SQLite / 阿里云 OSS 双存储。")
+    st.caption(f"默认导出文件根目录：`{DEFAULT_VIDEO_DATA_OUTPUT_DIR.as_posix()}`")
 
     st.divider()
     st.subheader("Google Cloud 配置")
@@ -405,10 +529,13 @@ with tab_single:
         elif not single_bvid.strip():
             st.warning("请先输入 bvid。")
         else:
+            started_at = datetime.now()
+            target_bvid = single_bvid.strip()
+            log_dir = _build_single_crawl_log_dir(started_at)
             with st.spinner("正在顺序执行 Meta -> Stat -> Comment -> Media ..."):
                 try:
                     summary = crawl_full_video_bundle(
-                        single_bvid.strip(),
+                        target_bvid,
                         enable_media=enable_media_single,
                         comment_limit=int(comment_limit_default),
                         gcp_config=active_media_strategy.gcp_config,
@@ -418,13 +545,43 @@ with tab_single:
                         credential=active_credential,
                     )
                 except Exception as exc:  # noqa: BLE001
+                    finished_at = datetime.now()
+                    log_path = _save_text_log(
+                        log_dir,
+                        "single_bvid_crawl",
+                        _build_single_crawl_log_content(
+                            bvid=target_bvid,
+                            started_at=started_at,
+                            finished_at=finished_at,
+                            enable_media=enable_media_single,
+                            comment_limit=int(comment_limit_default),
+                            error=exc,
+                        ),
+                        finished_at,
+                    )
                     st.error(f"抓取失败：{exc}")
+                    st.caption(f"日志已保存：`{_display_path(log_path)}`")
                 else:
+                    finished_at = datetime.now()
+                    log_path = _save_text_log(
+                        log_dir,
+                        "single_bvid_crawl",
+                        _build_single_crawl_log_content(
+                            bvid=target_bvid,
+                            started_at=started_at,
+                            finished_at=finished_at,
+                            enable_media=enable_media_single,
+                            comment_limit=int(comment_limit_default),
+                            summary=summary,
+                        ),
+                        finished_at,
+                    )
                     if summary.errors:
                         st.warning("流程已结束，但有部分阶段失败。")
                     else:
                         st.success("单视频全流程抓取成功。")
                     _show_json("流程摘要", summary.to_dict())
+                    st.caption(f"日志已保存：`{_display_path(log_path)}`")
 
 
 with tab_batch:
@@ -451,7 +608,9 @@ with tab_batch:
         elif uploaded is None:
             st.warning("请先上传 CSV 文件。")
         else:
-            tmp_path = Path("outputs") / "_uploaded_bvid_batch.csv"
+            upload_cache_dir = DEFAULT_VIDEO_DATA_OUTPUT_DIR / "_uploaded_batches"
+            upload_cache_dir.mkdir(parents=True, exist_ok=True)
+            tmp_path = upload_cache_dir / f"batch_input_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             tmp_path.parent.mkdir(parents=True, exist_ok=True)
             tmp_path.write_bytes(uploaded.getbuffer())
 
@@ -462,17 +621,32 @@ with tab_batch:
                         parallelism=int(parallelism),
                         enable_media=enable_media_batch,
                         comment_limit=int(comment_limit_default),
+                        consecutive_failure_limit=int(consecutive_failure_limit),
                         gcp_config=active_media_strategy.gcp_config,
                         max_height=int(max_height),
                         chunk_size_mb=int(chunk_size_mb),
                         media_strategy=active_media_strategy,
                         credential=active_credential,
+                        output_root_dir=DEFAULT_VIDEO_DATA_OUTPUT_DIR,
+                        source_csv_name=uploaded.name,
                     )
                 except Exception as exc:  # noqa: BLE001
                     st.error(f"批量抓取失败：{exc}")
                 else:
-                    st.success("批量抓取已完成。")
+                    if report.completed_all:
+                        st.success("批量抓取已完成，所有视频均已成功抓取。")
+                    elif report.stopped_due_to_consecutive_failures:
+                        st.warning("批量抓取已按连续失败阈值暂停，并导出了剔除成功条目的 remaining CSV。")
+                    else:
+                        st.warning("批量抓取已结束，但仍有未成功视频，已导出 remaining CSV 供继续执行。")
                     _show_json("批量运行报告", report.to_dict())
+                    st.caption(f"本次 batch_crawl 目录：`{_display_path(Path(report.session_dir))}`")
+                    if report.task_log_path:
+                        st.caption(f"子任务日志：`{_display_path(Path(report.task_log_path))}`")
+                    if report.remaining_csv_path:
+                        st.caption(f"剩余 bvid CSV：`{_display_path(Path(report.remaining_csv_path))}`")
+                    if report.session_summary_log_path:
+                        st.caption(f"最终汇总日志：`{_display_path(Path(report.session_summary_log_path))}`")
 
 
 with tab_interfaces:
@@ -487,13 +661,44 @@ with tab_interfaces:
             if not _gcp_ready():
                 st.warning("请先配置可用的 BigQuery / GCS 连接。")
             else:
+                started_at = datetime.now()
+                target_bvid = meta_bvid.strip()
+                log_dir = _build_api_debug_log_dir("meta", started_at)
                 try:
-                    result = crawl_video_meta(meta_bvid.strip(), gcp_config=active_media_strategy.gcp_config, credential=active_credential)
+                    result = crawl_video_meta(target_bvid, gcp_config=active_media_strategy.gcp_config, credential=active_credential)
                 except Exception as exc:  # noqa: BLE001
+                    finished_at = datetime.now()
+                    log_path = _save_text_log(
+                        log_dir,
+                        "meta_api",
+                        _build_api_log_content(
+                            api_name="meta",
+                            bvid=target_bvid,
+                            started_at=started_at,
+                            finished_at=finished_at,
+                            error=exc,
+                        ),
+                        finished_at,
+                    )
                     st.error(f"Meta 接口调用失败：{exc}")
+                    st.caption(f"日志已保存：`{_display_path(log_path)}`")
                 else:
+                    finished_at = datetime.now()
+                    log_path = _save_text_log(
+                        log_dir,
+                        "meta_api",
+                        _build_api_log_content(
+                            api_name="meta",
+                            bvid=target_bvid,
+                            started_at=started_at,
+                            finished_at=finished_at,
+                            payload=result.to_dict(),
+                        ),
+                        finished_at,
+                    )
                     st.success("Meta 接口调用成功。")
                     _show_meta_result(result)
+                    st.caption(f"日志已保存：`{_display_path(log_path)}`")
 
     with stat_tab:
         stat_bvid = st.text_input("Stat: bvid", key="stat_bvid")
@@ -501,13 +706,44 @@ with tab_interfaces:
             if not _gcp_ready():
                 st.warning("请先配置可用的 BigQuery / GCS 连接。")
             else:
+                started_at = datetime.now()
+                target_bvid = stat_bvid.strip()
+                log_dir = _build_api_debug_log_dir("stat", started_at)
                 try:
-                    result = crawl_stat_snapshot(stat_bvid.strip(), gcp_config=active_media_strategy.gcp_config, credential=active_credential)
+                    result = crawl_stat_snapshot(target_bvid, gcp_config=active_media_strategy.gcp_config, credential=active_credential)
                 except Exception as exc:  # noqa: BLE001
+                    finished_at = datetime.now()
+                    log_path = _save_text_log(
+                        log_dir,
+                        "stat_api",
+                        _build_api_log_content(
+                            api_name="stat",
+                            bvid=target_bvid,
+                            started_at=started_at,
+                            finished_at=finished_at,
+                            error=exc,
+                        ),
+                        finished_at,
+                    )
                     st.error(f"Stat 接口调用失败：{exc}")
+                    st.caption(f"日志已保存：`{_display_path(log_path)}`")
                 else:
+                    finished_at = datetime.now()
+                    log_path = _save_text_log(
+                        log_dir,
+                        "stat_api",
+                        _build_api_log_content(
+                            api_name="stat",
+                            bvid=target_bvid,
+                            started_at=started_at,
+                            finished_at=finished_at,
+                            payload=result.to_dict(),
+                        ),
+                        finished_at,
+                    )
                     st.success("Stat 接口调用成功。")
                     _show_json("StatSnapshot", result.to_dict())
+                    st.caption(f"日志已保存：`{_display_path(log_path)}`")
 
     with comment_tab:
         comment_bvid = st.text_input("Comment: bvid", key="comment_bvid")
@@ -516,18 +752,51 @@ with tab_interfaces:
             if not _gcp_ready():
                 st.warning("请先配置可用的 BigQuery / GCS 连接。")
             else:
+                started_at = datetime.now()
+                target_bvid = comment_bvid.strip()
+                log_dir = _build_api_debug_log_dir("comment", started_at)
                 try:
                     result = crawl_latest_comments(
-                        comment_bvid.strip(),
+                        target_bvid,
                         limit=int(comment_limit),
                         gcp_config=active_media_strategy.gcp_config,
                         credential=active_credential,
                     )
                 except Exception as exc:  # noqa: BLE001
+                    finished_at = datetime.now()
+                    log_path = _save_text_log(
+                        log_dir,
+                        "comment_api",
+                        _build_api_log_content(
+                            api_name="comment",
+                            bvid=target_bvid,
+                            started_at=started_at,
+                            finished_at=finished_at,
+                            error=exc,
+                            extra_lines=[f"comment_limit: {int(comment_limit)}"],
+                        ),
+                        finished_at,
+                    )
                     st.error(f"Comment 接口调用失败：{exc}")
+                    st.caption(f"日志已保存：`{_display_path(log_path)}`")
                 else:
+                    finished_at = datetime.now()
+                    log_path = _save_text_log(
+                        log_dir,
+                        "comment_api",
+                        _build_api_log_content(
+                            api_name="comment",
+                            bvid=target_bvid,
+                            started_at=started_at,
+                            finished_at=finished_at,
+                            payload=result.to_dict(),
+                            extra_lines=[f"comment_limit: {int(comment_limit)}"],
+                        ),
+                        finished_at,
+                    )
                     st.success("Comment 接口调用成功。")
                     _show_json("CommentSnapshot", result.to_dict())
+                    st.caption(f"日志已保存：`{_display_path(log_path)}`")
 
     with media_tab:
         media_bvid = st.text_input("Media: bvid", key="media_bvid")
@@ -536,16 +805,19 @@ with tab_interfaces:
             if not _gcp_ready():
                 st.warning("请先配置可用的 BigQuery / GCS 连接。")
             else:
+                started_at = datetime.now()
+                target_bvid = media_bvid.strip()
+                log_dir = _build_api_debug_log_dir("media", started_at)
                 try:
                     if use_streaming_api:
                         result = stream_media_to_store(
-                            media_bvid.strip(),
+                            target_bvid,
                             strategy=active_media_strategy,
                             credential=active_credential,
                         )
                     else:
                         result = crawl_media_assets(
-                            media_bvid.strip(),
+                            target_bvid,
                             strategy=active_media_strategy,
                             gcp_config=active_media_strategy.gcp_config,
                             max_height=int(max_height),
@@ -553,10 +825,41 @@ with tab_interfaces:
                             credential=active_credential,
                         )
                 except Exception as exc:  # noqa: BLE001
+                    finished_at = datetime.now()
+                    log_path = _save_text_log(
+                        log_dir,
+                        "media_api",
+                        _build_api_log_content(
+                            api_name="media",
+                            bvid=target_bvid,
+                            started_at=started_at,
+                            finished_at=finished_at,
+                            error=exc,
+                            extra_lines=[f"use_streaming_api: {use_streaming_api}"],
+                        ),
+                        finished_at,
+                    )
                     st.error(f"Media 接口调用失败：{exc}")
+                    st.caption(f"日志已保存：`{_display_path(log_path)}`")
                 else:
+                    finished_at = datetime.now()
+                    log_path = _save_text_log(
+                        log_dir,
+                        "media_api",
+                        _build_api_log_content(
+                            api_name="media",
+                            bvid=target_bvid,
+                            started_at=started_at,
+                            finished_at=finished_at,
+                            payload=result.to_dict(),
+                            media_result=result,
+                            extra_lines=[f"use_streaming_api: {use_streaming_api}"],
+                        ),
+                        finished_at,
+                    )
                     st.success("Media 接口调用成功。")
                     _show_json("MediaResult", result.to_dict())
+                    st.caption(f"日志已保存：`{_display_path(log_path)}`")
 
 
 with tab_db:

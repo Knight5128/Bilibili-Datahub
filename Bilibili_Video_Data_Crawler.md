@@ -4,10 +4,10 @@
 
 ### 核心功能
 
-- **单 bvid 全流程抓取**：对一个 `bvid` 依次执行元数据、统计快照、最新评论快照和媒体数据抓取，并输出阶段级摘要。
+- **单 bvid 全流程抓取**：对一个 `bvid` 依次执行元数据、统计快照、最新评论快照和媒体数据抓取，并输出阶段级摘要，同时将本次测试日志写入 `outputs/video_data/test_crawls/single_bvid_<date>_<time>/`。
 - **增强元数据抓取**：在 `Meta` 阶段除基础标题、简介、标签外，还补充抓取分区、封面、动态文案、分辨率、权限对象、上传用户资料、粉丝/关注关系和空间概览统计等信息。
-- **CSV 批量抓取**：上传包含 `bvid` 列的 CSV 文件，按配置的并发度依次调用单视频全流程接口。
-- **四类接口单独调试**：在前端分别调用 Meta、Stat、Comment、Media 四类接口，便于调试和小规模实验。
+- **CSV 批量抓取**：上传包含 `bvid` 列的 CSV 文件后，系统会在 `outputs/video_data/batch_crawls/batch_crawl_<date>_<time>/` 下集中保存该批任务的剩余 CSV、状态文件与日志；当连续失败条数达到侧边栏阈值时，会自动暂停当前子任务，并导出剔除已成功条目的 `remaining_bvids_part_n.csv` 供后续续跑。
+- **四类接口单独调试**：在前端分别调用 Meta、Stat、Comment、Media 四类接口，便于调试和小规模实验；每次调用都会将调试日志写入 `outputs/video_data/test_crawls/<meta/stat/comment/media>_api_<date>_<time>/`。
 - **Google 云端双层存储**：视频元数据、评论快照、统计快照、批量运行记录，以及媒体对象的 `object_key / bucket / endpoint / hash / size` 等信息统一写入 BigQuery；视频与音频媒体文件通过下载直链分块读取后直接上传到 GCS。
 - **媒体流式上传到 GCS**：媒体抓取阶段以流式方式从 B 站下载音视频，并同步写入 GCS Bucket，适合后续在 Google Colab、Vertex AI 或其他 Google 生态工具中直接读取。
 - **BigQuery 数据查看**：在前端的数据查看页中，可按 `bvid` 查看当前已入库的视频元数据、最新统计快照、最新评论快照与媒体资产记录，便于核对增强字段是否已成功落库。
@@ -22,6 +22,7 @@
 - **学术研究**：围绕指定样本池补充视频的内容属性、互动面板、评论快照和媒体资产。
 - **方法验证**：对少量视频快速测试不同评论条数、并发度、媒体分块大小、最大分辨率和媒体存储方式等参数。
 - **批量数据准备**：对 `Bilibili_Video_Pool_Builder` 导出的 `video_pool` CSV 进行顺序补抓，形成后续分析所需的完整数据底座。
+- **断点续跑**：当批量抓取因连续失败阈值而暂停后，可直接把 `remaining_bvids_part_n.csv` 再上传到“CSV 批量抓取”中继续执行，系统会自动复用第一次任务的会话目录并继续输出 `part_(n+1)` 文件。
 - **云端训练准备**：将媒体文件直接沉淀到 GCS，并在 BigQuery 中维护结构化索引与样本描述，便于后续在 Google Colab Notebook 中直接读取与训练。
 
 ### 当前使用方式（简要）
@@ -38,17 +39,22 @@ streamlit run bvd-crawler.py
 - 前端主要包含五个主菜单，并在页面右侧常驻一个可收起的字段定义面板：
   - **单 bvid 全流程**：输入一个 `bvid`，顺序执行四类抓取逻辑。
   - **CSV 批量抓取**：上传带 `bvid` 列的 CSV，批量执行全流程抓取。
-  - **四类接口调试**：分别调用 `crawl_video_meta`、`crawl_stat_snapshot`、`crawl_latest_comments`、`stream_media_to_store/crawl_media_assets`；其中 `Meta` 调试页会额外展开展示标签详情、视频权限对象、上传用户资料、关系快照与空间概览。
+  - **四类接口调试**：分别调用 `crawl_video_meta`、`crawl_stat_snapshot`、`crawl_latest_comments`、`stream_media_to_store/crawl_media_assets`；其中 `Meta` 调试页会额外展开展示标签详情、视频权限对象、上传用户资料、关系快照与空间概览，并将每次调试结果保存为独立日志。
   - **BigQuery / GCS 数据查看**：查看某个 `bvid` 已入库的视频元数据、最新统计快照、最新评论快照和媒体资产信息，并在有媒体资产时通过“导出该 bvid 的媒体文件为本地文件”面板直接从 GCS 回读视频/音频 `.m4s` 文件。
   - **快捷跳转**：输入单个 `bvid` 或作者 ID，也可直接粘贴 B 站视频链接/作者主页链接，界面会自动提取有效标识并在系统默认浏览器中打开目标页面。
   - **右侧字段定义速查面板**：项目启动时即完成初始化并固定在页面右侧，可随时展开 / 收起；页面上下滚动时面板位置保持不变，支持按数据模块筛选字段，也可继续按模块展开查看完整定义。
 
 - 侧边栏全局设置中可以配置：
   - 默认评论条数、媒体分块大小、最大分辨率等运行参数；
+  - `CSV 批量抓取连续失败暂停阈值`：默认 `10`；达到阈值后会暂停当前批量子任务，并导出剔除已成功条目的剩余 CSV；
   - Google Cloud 配置：`GCP Project ID`、`BigQuery Dataset`、`GCS Bucket 名称`、`GCP Region（可选）`、`服务账号 JSON 路径（可选）`、`GCS 对象前缀`、`公共访问基础 URL（可选）`；
   - 可使用“保存配置”按钮将上述 Google Cloud 配置写入本地文件；应用下次启动时会自动读取并回填；
   - 可选的 **B 站 Cookie（SESSDATA、bili_jct、buvid3）**，用于在本地内存中构造 `bilibili-api-python` 的登录态 `Credential`，提升评论抓取和高质量媒体直链获取的成功率与稳定性；
   - **安全说明**：B 站 Cookie 仅保存在当前 Streamlit 会话内存中；Google Cloud 配置会在点击“保存配置”后写入本地文件，但该本地配置文件已默认加入 `.gitignore`，不会被纳入版本控制。若未填写 JSON 路径，则默认使用 Application Default Credentials（ADC）。
+
+- 默认本地导出根目录为 `outputs/video_data/`：
+  - `batch_crawls/`：保存每个 CSV 批量任务的会话目录、`remaining_bvids_part_n.csv`、`batch_crawl_state.json`、子任务日志，以及在整轮完成后生成的汇总日志；
+  - `test_crawls/`：保存“单 bvid 全流程”和“四类接口调试”的本地日志，便于核对 GCS 路径、接口返回结果与报错信息。
 
 ### 维护约定
 

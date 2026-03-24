@@ -369,19 +369,51 @@ class FullCrawlSummary:
 class BatchCrawlReport:
     run_id: str
     total_bvids: int
+    processed_count: int
     success_count: int
     failed_count: int
+    remaining_count: int
     started_at: datetime
     finished_at: datetime
     summaries: list[FullCrawlSummary] = field(default_factory=list)
+    part_number: int = 1
+    effective_parallelism: int = 1
+    consecutive_failure_limit: int = 0
+    stopped_due_to_consecutive_failures: bool = False
+    completed_all: bool = False
+    stop_reason: str = ""
+    session_dir: str = ""
+    logs_dir: str = ""
+    remaining_csv_path: str | None = None
+    task_log_path: str | None = None
+    session_state_path: str | None = None
+    session_summary_log_path: str | None = None
+    successful_bvids: list[str] = field(default_factory=list)
+    failed_bvids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "run_id": self.run_id,
             "total_bvids": self.total_bvids,
+            "processed_count": self.processed_count,
             "success_count": self.success_count,
             "failed_count": self.failed_count,
+            "remaining_count": self.remaining_count,
             "started_at": _dt(self.started_at),
             "finished_at": _dt(self.finished_at),
+            "part_number": self.part_number,
+            "effective_parallelism": self.effective_parallelism,
+            "consecutive_failure_limit": self.consecutive_failure_limit,
+            "stopped_due_to_consecutive_failures": self.stopped_due_to_consecutive_failures,
+            "completed_all": self.completed_all,
+            "stop_reason": self.stop_reason,
+            "session_dir": self.session_dir,
+            "logs_dir": self.logs_dir,
+            "remaining_csv_path": self.remaining_csv_path,
+            "task_log_path": self.task_log_path,
+            "session_state_path": self.session_state_path,
+            "session_summary_log_path": self.session_summary_log_path,
+            "successful_bvids": self.successful_bvids,
+            "failed_bvids": self.failed_bvids,
             "per_bvid_summaries": [summary.to_dict() for summary in self.summaries],
         }
