@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 from dataclasses import dataclass
-from datetime import date, datetime, time as dt_time, timedelta
+from datetime import date, datetime, time as dt_time
 from html import escape
 import importlib
 from pathlib import Path
@@ -44,6 +44,7 @@ from bili_pipeline.utils.bilibili_jump import (
     normalize_owner_mid,
     open_in_default_browser,
 )
+from bili_pipeline.utils.log_files import build_timestamp_marker, wrap_log_text
 from bili_pipeline.utils.streamlit_night_sky import render_night_sky_background
 
 
@@ -72,6 +73,10 @@ FAILED_OWNER_MID_LOG_PATTERN = re.compile(r"\[WARN\]:\s*作者\s+(\d+)\s+抓取�
 REMAINING_UIDS_PART_PATTERN = re.compile(r"remaining_uids_part_(\d+)\.csv$", re.IGNORECASE)
 UID_EXPANSION_PART_FILE_PATTERN = re.compile(
     r"(?:videolist|remaining_uids)_part_(\d+)\.csv$",
+    re.IGNORECASE,
+)
+UID_EXPANSION_SESSION_TIMESTAMP_PATTERN = re.compile(
+    r"uid_expansion_(?:\d+_days_)?(?:\d{8}_)?(\d{8}_\d{6})(?:_\d+)?$",
     re.IGNORECASE,
 )
 UID_EXPANSION_DIRNAME = "uid_expansions"
@@ -291,7 +296,11 @@ def _display_path(path: Path) -> str:
 def _format_date_token(value: datetime | date) -> str:
     if isinstance(value, datetime):
         value = value.date()
-    return value.strftime("%y%m%d")
+    return value.strftime("%Y%m%d")
+
+
+def _format_timestamp_token(value: datetime) -> str:
+    return value.strftime("%Y%m%d_%H%M%S")
 
 
 def _format_datetime_iso(value: datetime | None) -> str:
@@ -307,19 +316,29 @@ def _parse_datetime_iso(value: str | None) -> datetime | None:
         return None
 
 
+def _parse_compact_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y%m%d_%H%M%S")
+    except ValueError:
+        return None
+
+
 def _coerce_start_datetime(selected_date: date) -> datetime:
     return datetime.combine(selected_date, dt_time.min)
 
 
-def _coerce_end_datetime(selected_date: date) -> datetime:
-    today = datetime.now().date()
+def _coerce_end_datetime(selected_date: date, reference_now: datetime | None = None) -> datetime:
+    current_time = reference_now or datetime.now()
+    today = current_time.date()
     if selected_date >= today:
-        return datetime.now()
+        return current_time
     return datetime.combine(selected_date, dt_time.max.replace(microsecond=0))
 
 
-def _build_window_token(start_at: datetime, end_at: datetime) -> str:
-    return f"{_format_date_token(start_at)}_to_{_format_date_token(end_at)}"
+def _build_uid_expansion_session_name(requested_start_at: datetime, task_started_at: datetime) -> str:
+    return f"uid_expansion_{_format_date_token(requested_start_at)}_{_format_timestamp_token(task_started_at)}"
 
 
 def _build_custom_seed_base_name(selection: CustomSeedSelection, run_started_at: datetime) -> str:
@@ -463,9 +482,36 @@ def _build_uid_expansion_summary_text(state: dict) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
+def _resolve_uid_expansion_summary_window(state: dict) -> tuple[str, str]:
+    parts = sorted(
+        state.get("parts", []),
+        key=lambda item: int(item.get("part_number", 0)),
+    )
+    started_at = (
+        (parts[0].get("run_started_at") if parts else None)
+        or state.get("requested_window_start_at")
+        or state.get("updated_at")
+        or datetime.now().isoformat(timespec="seconds")
+    )
+    finished_at = (
+        state.get("updated_at")
+        or (parts[-1].get("run_finished_at") if parts else None)
+        or started_at
+    )
+    return str(started_at), str(finished_at)
+
+
 def _write_uid_expansion_summary(session_dir: Path, state: dict) -> Path:
     summary_path = session_dir / UID_EXPANSION_SUMMARY_FILENAME
-    summary_path.write_text(_build_uid_expansion_summary_text(state), encoding="utf-8")
+    started_at, finished_at = _resolve_uid_expansion_summary_window(state)
+    summary_path.write_text(
+        wrap_log_text(
+            _build_uid_expansion_summary_text(state),
+            started_at=started_at,
+            finished_at=finished_at,
+        ),
+        encoding="utf-8",
+    )
     return summary_path
 
 
@@ -519,6 +565,7 @@ def _prepare_uid_expansion_session(
     owner_mids: list[int],
     requested_start_at: datetime,
     requested_end_at: datetime,
+    task_started_at: datetime,
     logger=None,
 ) -> UidExpansionSessionContext:
     normalized_root_dir = _normalize_output_root(str(root_dir))
@@ -541,22 +588,24 @@ def _prepare_uid_expansion_session(
             is_new_session=False,
         )
 
-    session_dir = (
-        normalized_root_dir
-        / UID_EXPANSION_DIRNAME
-        / (
-            "uid_expansion_pending_"
-            f"{_build_window_token(requested_start_at, requested_end_at)}_"
-            f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        )
-    )
+    base_name = _build_uid_expansion_session_name(requested_start_at, task_started_at)
+    parent_dir = normalized_root_dir / UID_EXPANSION_DIRNAME
+    session_dir = parent_dir / base_name
+    suffix = 2
+    while session_dir.exists():
+        session_dir = parent_dir / f"{base_name}_{suffix}"
+        suffix += 1
     if logger is not None:
         if uploaded_part_number is not None:
             logger(
                 "[WARN]: 上传文件名看起来像历史 remaining_uids_part_n.csv，但未找到匹配会话；"
                 "已按新的 uid_expansion 任务创建目录。"
             )
-        logger(f"[INFO]: 已创建新的 uid_expansion 会话目录：{_display_path(session_dir)}。")
+        logger(
+            "[INFO]: 已创建新的 uid_expansion 会话目录："
+            f"{_display_path(session_dir)}（start_date={requested_start_at.date().isoformat()}，"
+            f"task_started_at={task_started_at.isoformat(timespec='seconds')}）。"
+        )
     return UidExpansionSessionContext(
         root_dir=normalized_root_dir,
         session_dir=session_dir,
@@ -566,15 +615,40 @@ def _prepare_uid_expansion_session(
     )
 
 
-def _resolve_uid_history_checkpoint(state: dict) -> datetime | None:
+def _resolve_uid_history_task_started_at_from_parts(state: dict) -> datetime | None:
+    part_started_candidates = [
+        parsed_started_at
+        for part in state.get("parts", [])
+        if isinstance(part, dict)
+        for parsed_started_at in [_parse_datetime_iso(part.get("run_started_at")) or _parse_compact_datetime(part.get("run_started_at"))]
+        if parsed_started_at is not None
+    ]
+    if not part_started_candidates:
+        return None
+    return min(part_started_candidates)
+
+
+def _resolve_uid_history_task_started_at_from_session_dir(session_dir: Path | None) -> datetime | None:
+    if session_dir is None:
+        return None
+    match = UID_EXPANSION_SESSION_TIMESTAMP_PATTERN.search(session_dir.name)
+    if match is None:
+        return None
+    return _parse_compact_datetime(match.group(1))
+
+
+def _resolve_uid_history_task_started_at(state: dict, session_dir: Path | None = None) -> datetime | None:
     return (
-        _parse_datetime_iso(state.get("requested_window_end_at"))
-        or _parse_datetime_iso(state.get("effective_window_end_at"))
+        _parse_datetime_iso(state.get("task_started_at"))
+        or _resolve_uid_history_task_started_at_from_session_dir(session_dir)
+        or _resolve_uid_history_task_started_at_from_parts(state)
         or _parse_datetime_iso(state.get("updated_at"))
+        or _parse_datetime_iso(state.get("requested_window_end_at"))
+        or _parse_datetime_iso(state.get("effective_window_end_at"))
     )
 
 
-def _load_owner_history_cutoffs(
+def _load_owner_history_task_starts(
     root_dir: Path,
     excluded_session_dirs: list[Path] | None = None,
 ) -> dict[int, datetime]:
@@ -583,7 +657,7 @@ def _load_owner_history_cutoffs(
         return {}
 
     excluded_keys = {_path_key(path) for path in (excluded_session_dirs or [])}
-    checkpoints: dict[int, datetime] = {}
+    task_starts: dict[int, datetime] = {}
     for session_dir in sorted(uid_expansions_root.iterdir(), key=lambda path: path.stat().st_mtime):
         if not session_dir.is_dir():
             continue
@@ -592,14 +666,17 @@ def _load_owner_history_cutoffs(
         owner_mids = _read_owner_mid_csv(session_dir / UID_EXPANSION_ORIGINAL_UIDS_FILENAME)
         if not owner_mids:
             continue
-        checkpoint = _resolve_uid_history_checkpoint(_load_uid_expansion_state(session_dir))
-        if checkpoint is None:
+        task_started_at = _resolve_uid_history_task_started_at(
+            _load_uid_expansion_state(session_dir),
+            session_dir,
+        )
+        if task_started_at is None:
             continue
         for owner_mid in owner_mids:
-            previous = checkpoints.get(owner_mid)
-            if previous is None or checkpoint > previous:
-                checkpoints[owner_mid] = checkpoint
-    return checkpoints
+            previous = task_starts.get(owner_mid)
+            if previous is None or task_started_at > previous:
+                task_starts[owner_mid] = task_started_at
+    return task_starts
 
 
 def _build_owner_since_overrides(
@@ -610,22 +687,24 @@ def _build_owner_since_overrides(
     excluded_session_dirs: list[Path] | None = None,
     logger=None,
 ) -> tuple[dict[int, datetime], int]:
-    checkpoints = _load_owner_history_cutoffs(root_dir, excluded_session_dirs=excluded_session_dirs)
+    task_starts = _load_owner_history_task_starts(root_dir, excluded_session_dirs=excluded_session_dirs)
     overrides: dict[int, datetime] = {}
     reused_owner_count = 0
     for owner_mid in owner_mids:
-        checkpoint = checkpoints.get(owner_mid)
-        if checkpoint is None:
+        task_started_at = task_starts.get(owner_mid)
+        if task_started_at is None:
             continue
         reused_owner_count += 1
+        history_start_at = _coerce_start_datetime(task_started_at.date())
         overrides[owner_mid] = min(
-            max(requested_start_at, checkpoint + timedelta(seconds=1)),
+            max(requested_start_at, history_start_at),
             requested_end_at,
         )
     if logger is not None:
         logger(
             f"[INFO]: 历史任务增量检查完成：{reused_owner_count} 个作者命中过往 original_uids，"
-            f"{len(owner_mids) - reused_owner_count} 个作者按全局 start_date 抓取。"
+            f"{len(owner_mids) - reused_owner_count} 个作者按全局 start_date 抓取；"
+            "命中历史的作者将从其最近一次任务开始日（含当天）继续抓取。"
         )
     return overrides, reused_owner_count
 
@@ -658,38 +737,6 @@ def _drop_existing_uid_expansion_duplicates(
             f"本次过滤掉 {removed_count} 条重复视频。"
         )
     return DiscoverResult(entries=filtered_entries, owner_mids=result.owner_mids), removed_count
-
-
-def _rename_uid_expansion_session_dir(
-    session: UidExpansionSessionContext,
-    state: dict,
-    logger=None,
-) -> tuple[UidExpansionSessionContext, Path | None]:
-    actual_start_at = _parse_datetime_iso(state.get("actual_window_start_at"))
-    actual_end_at = _parse_datetime_iso(state.get("actual_window_end_at"))
-    if actual_start_at is None or actual_end_at is None:
-        return session, None
-
-    base_name = f"uid_expansion_{_build_window_token(actual_start_at, actual_end_at)}"
-    parent_dir = session.session_dir.parent
-    target_dir = parent_dir / base_name
-    suffix = 2
-    while target_dir.exists() and target_dir != session.session_dir:
-        target_dir = parent_dir / f"{base_name}_{suffix}"
-        suffix += 1
-    if target_dir == session.session_dir:
-        return session, None
-
-    old_session_dir = session.session_dir
-    old_display = _display_path(old_session_dir)
-    session.session_dir.rename(target_dir)
-    session.session_dir = target_dir
-    session.logs_dir = target_dir / "logs"
-    state["session_dir"] = _display_path(target_dir)
-    _save_uid_expansion_state(target_dir, state)
-    if logger is not None:
-        logger(f"[INFO]: uid_expansion 会话目录已重命名：{old_display} -> {_display_path(target_dir)}")
-    return session, old_session_dir
 
 
 def _record_uid_expansion_part(
@@ -742,9 +789,11 @@ def _record_uid_expansion_part(
     original_uid_count = int(state.get("original_uid_count") or input_owner_count)
     previous_actual_start = _parse_datetime_iso(state.get("actual_window_start_at"))
     previous_actual_end = _parse_datetime_iso(state.get("actual_window_end_at"))
+    task_started_at = state.get("task_started_at") or run_started_at
     state.update(
         {
             "session_dir": _display_path(session.session_dir),
+            "task_started_at": task_started_at,
             "requested_window_start_at": _format_datetime_iso(requested_start_at),
             "requested_window_end_at": _format_datetime_iso(requested_end_at),
             "effective_window_start_at": _format_datetime_iso(
@@ -889,6 +938,8 @@ def _build_result_from_owner_mids_with_guardrails(
 
 
 def _append_log(logs: list[str], placeholder, message: str) -> None:
+    if not logs:
+        logs.append(build_timestamp_marker("BEGIN", datetime.now()))
     logs.append(message)
     placeholder.code("\n".join(logs), language=None)
 
@@ -901,7 +952,12 @@ def _save_task_logs(task_name: str, logs: list[str], *, log_dir: Path | None = N
     safe_task_name = re.sub(r"[^A-Za-z0-9._-]+", "_", task_name).strip("_") or "task"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     log_path = target_log_dir / f"{timestamp}_{safe_task_name}.log"
-    content = "\n".join(logs).strip()
+    finalized_logs = list(logs)
+    if not finalized_logs[0].startswith("[TIMESTAMP][BEGIN]"):
+        finalized_logs.insert(0, build_timestamp_marker("BEGIN", datetime.now()))
+    if not finalized_logs[-1].startswith("[TIMESTAMP][END]"):
+        finalized_logs.append(build_timestamp_marker("END", datetime.now()))
+    content = "\n".join(finalized_logs).strip()
     log_path.write_text(content + "\n", encoding="utf-8")
     return log_path
 
@@ -1268,8 +1324,9 @@ with tab_custom_export:
                     elif owner_start_date > owner_end_date:
                         st.warning("`start_date` 不能晚于 `end_date`。")
                     else:
+                        task_started_at = datetime.now().replace(microsecond=0)
                         requested_start_at = _coerce_start_datetime(owner_start_date)
-                        requested_end_at = _coerce_end_datetime(owner_end_date)
+                        requested_end_at = _coerce_end_datetime(owner_end_date, reference_now=task_started_at)
                         output_root = _normalize_output_root(owner_out_path)
                         session = _prepare_uid_expansion_session(
                             output_root,
@@ -1277,6 +1334,7 @@ with tab_custom_export:
                             owner_mids,
                             requested_start_at,
                             requested_end_at,
+                            task_started_at,
                             logger=_owner_log,
                         )
                         owner_since_overrides, reused_owner_count = _build_owner_since_overrides(
@@ -1287,7 +1345,7 @@ with tab_custom_export:
                             excluded_session_dirs=[session.session_dir],
                             logger=_owner_log,
                         )
-                        run_started_at = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        run_started_at = task_started_at.isoformat(timespec="seconds")
                         saved: Path | None = None
                         remaining_saved: Path | None = None
                         summary_saved: Path | None = None
@@ -1337,7 +1395,7 @@ with tab_custom_export:
                                         remaining_output_path,
                                     )
                                     _owner_log(f"[INFO]: 剩余作者 UID 已导出：{remaining_saved}")
-                                draft_state = _record_uid_expansion_part(
+                                _record_uid_expansion_part(
                                     session,
                                     requested_start_at,
                                     requested_end_at,
@@ -1349,17 +1407,8 @@ with tab_custom_export:
                                     remaining_saved,
                                     None,
                                     run_started_at,
-                                    datetime.now().strftime("%Y%m%d_%H%M%S"),
+                                    datetime.now().isoformat(timespec="seconds"),
                                 )
-                                session, old_session_dir = _rename_uid_expansion_session_dir(
-                                    session,
-                                    draft_state,
-                                    logger=_owner_log,
-                                )
-                                if old_session_dir is not None:
-                                    saved = session.session_dir / saved.name
-                                    if remaining_saved is not None:
-                                        remaining_saved = session.session_dir / remaining_saved.name
                                 actual_start_at, actual_end_at = _derive_result_pubdate_window(outcome.result)
                                 if actual_start_at is not None and actual_end_at is not None:
                                     _owner_log(
@@ -1417,7 +1466,7 @@ with tab_custom_export:
                                     remaining_saved,
                                     log_path,
                                     run_started_at,
-                                    datetime.now().strftime("%Y%m%d_%H%M%S"),
+                                    datetime.now().isoformat(timespec="seconds"),
                                 )
                                 if not outcome.remaining_owner_mids:
                                     summary_saved = _write_uid_expansion_summary(session.session_dir, state)

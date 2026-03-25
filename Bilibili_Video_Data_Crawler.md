@@ -4,10 +4,10 @@
 
 ### 核心功能
 
-- **单 bvid 全流程抓取**：对一个 `bvid` 依次执行元数据、统计快照、最新评论快照和媒体数据抓取，并输出阶段级摘要，同时将本次测试日志写入 `outputs/video_data/test_crawls/single_bvid_<date>_<time>/`。
+- **单 bvid 全流程抓取**：对一个 `bvid` 依次执行元数据、统计快照、最新评论快照和媒体数据抓取，并输出阶段级摘要，同时将本次测试日志写入 `outputs/video_data/test_crawls/single_bvid_<date>_<time>/`；日志文件开头与结尾会额外写入 `[TIMESTAMP][BEGIN]` / `[TIMESTAMP][END]`，标记本次记录的精确起止时间。
 - **增强元数据抓取**：在 `Meta` 阶段除基础标题、简介、标签外，还补充抓取分区、封面、动态文案、分辨率、权限对象、上传用户资料、粉丝/关注关系和空间概览统计等信息。
-- **CSV 批量抓取**：上传包含 `bvid` 列的 CSV 文件后，系统会在 `outputs/video_data/batch_crawls/batch_crawl_<date>_<time>/` 下集中保存该批任务的剩余 CSV、状态文件与日志；当连续失败条数达到侧边栏阈值时，会自动暂停当前子任务，并导出剔除已成功条目的 `remaining_bvids_part_n.csv` 供后续续跑。
-- **四类接口单独调试**：在前端分别调用 Meta、Stat、Comment、Media 四类接口，便于调试和小规模实验；每次调用都会将调试日志写入 `outputs/video_data/test_crawls/<meta/stat/comment/media>_api_<date>_<time>/`。
+- **CSV 批量抓取**：上传包含 `bvid` 列的 CSV 文件后，系统会在 `outputs/video_data/batch_crawls/batch_crawl_<date>_<time>/` 下集中保存该批任务的剩余 CSV、状态文件与日志；当连续失败条数达到侧边栏阈值时，会自动暂停当前子任务，并导出剔除已成功条目的 `remaining_bvids_part_n.csv` 供后续续跑。子任务日志与最终汇总日志同样都会带有 `[TIMESTAMP][BEGIN]` / `[TIMESTAMP][END]` 起止标记。
+- **四类接口单独调试**：在前端分别调用 Meta、Stat、Comment、Media 四类接口，便于调试和小规模实验；每次调用都会将调试日志写入 `outputs/video_data/test_crawls/<meta/stat/comment/media>_api_<date>_<time>/`，并在日志首尾自动补充 `[TIMESTAMP][BEGIN]` / `[TIMESTAMP][END]`。
 - **Google 云端双层存储**：视频元数据、评论快照、统计快照、批量运行记录，以及媒体对象的 `object_key / bucket / endpoint / hash / size` 等信息统一写入 BigQuery；视频与音频媒体文件通过下载直链分块读取后直接上传到 GCS。
 - **媒体流式上传到 GCS**：媒体抓取阶段以流式方式从 B 站下载音视频，并同步写入 GCS Bucket，适合后续在 Google Colab、Vertex AI 或其他 Google 生态工具中直接读取。
 - **BigQuery 数据查看**：在前端的数据查看页中，可按 `bvid` 查看当前已入库的视频元数据、最新统计快照、最新评论快照与媒体资产记录，便于核对增强字段是否已成功落库。

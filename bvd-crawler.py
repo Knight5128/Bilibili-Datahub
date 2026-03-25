@@ -36,6 +36,7 @@ from bili_pipeline.utils.bilibili_jump import (
     normalize_owner_mid,
     open_in_default_browser,
 )
+from bili_pipeline.utils.log_files import wrap_log_text
 from bili_pipeline.utils.streamlit_night_sky import render_night_sky_background
 
 
@@ -276,10 +277,24 @@ def _make_safe_log_prefix(prefix: str) -> str:
     return "".join(safe_chars).strip("_") or "task"
 
 
-def _save_text_log(log_dir: Path, prefix: str, content: str, finished_at: datetime) -> Path:
+def _save_text_log(
+    log_dir: Path,
+    prefix: str,
+    content: str,
+    finished_at: datetime,
+    *,
+    started_at: datetime | None = None,
+) -> Path:
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / f"{_make_safe_log_prefix(prefix)}_{finished_at.strftime('%Y%m%d_%H%M%S')}.log"
-    log_path.write_text(content.strip() + "\n", encoding="utf-8")
+    log_path.write_text(
+        wrap_log_text(
+            content,
+            started_at=started_at or finished_at,
+            finished_at=finished_at,
+        ),
+        encoding="utf-8",
+    )
     return log_path
 
 
@@ -558,6 +573,7 @@ with tab_single:
                             error=exc,
                         ),
                         finished_at,
+                        started_at=started_at,
                     )
                     st.error(f"抓取失败：{exc}")
                     st.caption(f"日志已保存：`{_display_path(log_path)}`")
@@ -575,6 +591,7 @@ with tab_single:
                             summary=summary,
                         ),
                         finished_at,
+                        started_at=started_at,
                     )
                     if summary.errors:
                         st.warning("流程已结束，但有部分阶段失败。")
@@ -679,6 +696,7 @@ with tab_interfaces:
                             error=exc,
                         ),
                         finished_at,
+                        started_at=started_at,
                     )
                     st.error(f"Meta 接口调用失败：{exc}")
                     st.caption(f"日志已保存：`{_display_path(log_path)}`")
@@ -695,6 +713,7 @@ with tab_interfaces:
                             payload=result.to_dict(),
                         ),
                         finished_at,
+                        started_at=started_at,
                     )
                     st.success("Meta 接口调用成功。")
                     _show_meta_result(result)
@@ -724,6 +743,7 @@ with tab_interfaces:
                             error=exc,
                         ),
                         finished_at,
+                        started_at=started_at,
                     )
                     st.error(f"Stat 接口调用失败：{exc}")
                     st.caption(f"日志已保存：`{_display_path(log_path)}`")
@@ -740,6 +760,7 @@ with tab_interfaces:
                             payload=result.to_dict(),
                         ),
                         finished_at,
+                        started_at=started_at,
                     )
                     st.success("Stat 接口调用成功。")
                     _show_json("StatSnapshot", result.to_dict())
@@ -776,6 +797,7 @@ with tab_interfaces:
                             extra_lines=[f"comment_limit: {int(comment_limit)}"],
                         ),
                         finished_at,
+                        started_at=started_at,
                     )
                     st.error(f"Comment 接口调用失败：{exc}")
                     st.caption(f"日志已保存：`{_display_path(log_path)}`")
@@ -793,6 +815,7 @@ with tab_interfaces:
                             extra_lines=[f"comment_limit: {int(comment_limit)}"],
                         ),
                         finished_at,
+                        started_at=started_at,
                     )
                     st.success("Comment 接口调用成功。")
                     _show_json("CommentSnapshot", result.to_dict())
@@ -838,6 +861,7 @@ with tab_interfaces:
                             extra_lines=[f"use_streaming_api: {use_streaming_api}"],
                         ),
                         finished_at,
+                        started_at=started_at,
                     )
                     st.error(f"Media 接口调用失败：{exc}")
                     st.caption(f"日志已保存：`{_display_path(log_path)}`")
@@ -856,6 +880,7 @@ with tab_interfaces:
                             extra_lines=[f"use_streaming_api: {use_streaming_api}"],
                         ),
                         finished_at,
+                        started_at=started_at,
                     )
                     st.success("Media 接口调用成功。")
                     _show_json("MediaResult", result.to_dict())

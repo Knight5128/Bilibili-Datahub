@@ -25,6 +25,7 @@ from bili_pipeline.models import (
     StatSnapshot,
 )
 from bili_pipeline.storage import BigQueryCrawlerStore
+from bili_pipeline.utils.log_files import wrap_log_lines, wrap_log_text
 
 
 DEFAULT_VIDEO_DATA_OUTPUT_DIR = Path("outputs") / "video_data"
@@ -261,7 +262,15 @@ def _build_batch_crawl_summary_text(state: dict[str, Any]) -> str:
 
 def _write_batch_crawl_summary_log(session_dir: Path, state: dict[str, Any], finished_at: datetime) -> Path:
     summary_path = session_dir / f"{BATCH_CRAWL_SUMMARY_LOG_BASENAME}_{_timestamp_for_log(finished_at)}.log"
-    summary_path.write_text(_build_batch_crawl_summary_text(state), encoding="utf-8")
+    summary_started_at = state.get("session_started_at") or finished_at
+    summary_path.write_text(
+        wrap_log_text(
+            _build_batch_crawl_summary_text(state),
+            started_at=summary_started_at,
+            finished_at=finished_at,
+        ),
+        encoding="utf-8",
+    )
     return summary_path
 
 
@@ -613,7 +622,10 @@ def crawl_bvid_list_from_csv(
 
     _append_task_log(task_logs, f"子任务结束时间：{finished_at.isoformat()}")
     task_log_path = session.logs_dir / f"batch_crawl_part_{session.part_number}_{_timestamp_for_log(finished_at)}.log"
-    task_log_path.write_text("\n".join(task_logs).strip() + "\n", encoding="utf-8")
+    task_log_path.write_text(
+        wrap_log_lines(task_logs, started_at=started_at, finished_at=finished_at),
+        encoding="utf-8",
+    )
 
     state, state_path = _record_batch_crawl_part(
         session=session,
