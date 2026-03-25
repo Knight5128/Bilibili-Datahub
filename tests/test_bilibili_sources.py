@@ -178,6 +178,42 @@ class BilibiliSourceAdaptersTest(unittest.TestCase):
         )
         self.assertEqual(["BV_recent"], [item.bvid for item in items])
 
+    @patch("bili_pipeline.discover.bilibili_sources.User.get_videos", new_callable=AsyncMock)
+    def test_user_recent_videos_respects_until_boundary(self, mock_get_videos: AsyncMock) -> None:
+        mock_get_videos.side_effect = [
+            {
+                "list": {
+                    "vlist": [
+                        {
+                            "bvid": "BV_too_new",
+                            "typeid": 17,
+                            "created": 1773300000,
+                            "length": "10:00",
+                            "mid": 789,
+                            "play": 1000,
+                            "favorites": 100,
+                        },
+                        {
+                            "bvid": "BV_in_window",
+                            "typeid": 17,
+                            "created": 1771000000,
+                            "length": "09:00",
+                            "mid": 789,
+                            "play": 100,
+                            "favorites": 10,
+                        },
+                    ]
+                }
+            }
+        ]
+
+        items = BilibiliUserRecentVideoSource(page_size=2, max_pages=3).fetch_recent_videos(
+            owner_mid=789,
+            since=datetime.fromtimestamp(1765000000),
+            until=datetime.fromtimestamp(1772000000),
+        )
+        self.assertEqual(["BV_in_window"], [item.bvid for item in items])
+
     @patch("bili_pipeline.discover.bilibili_sources.Video.get_info", new_callable=AsyncMock)
     def test_resolve_owner_mids_from_bvids_collects_unique_authors(
         self,

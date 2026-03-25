@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Callable
 
 from bili_pipeline.config import DiscoverConfig
@@ -50,7 +50,7 @@ class VideoPoolBuilder:
         error_callback: Callable[[int, int, int, Exception], None] | None = None,
     ) -> DiscoverResult:
         current_time = now or datetime.now()
-        since = current_time - timedelta(days=self.config.lookback_days)
+        since, until = self.config.resolve_time_window(current_time)
         merged = self._merge_candidates(
             [candidate for candidate in candidates if self._allow_candidate(candidate, enforce_tid=True)]
         )
@@ -70,7 +70,7 @@ class VideoPoolBuilder:
         total_owners = len(owner_mids)
         for index, owner_mid in enumerate(owner_mids, start=1):
             try:
-                author_candidates = self.author_source.fetch_recent_videos(owner_mid, since)
+                author_candidates = self.author_source.fetch_recent_videos(owner_mid, since, until)
             except Exception as exc:  # noqa: BLE001
                 if error_callback is not None:
                     error_callback(owner_mid, index, total_owners, exc)
@@ -91,18 +91,21 @@ class VideoPoolBuilder:
         owner_mids: list[int],
         now: datetime | None = None,
         *,
+        owner_since_overrides: dict[int, datetime] | None = None,
         progress_callback: Callable[[int, int, int, int], None] | None = None,
         error_callback: Callable[[int, int, int, Exception], None] | None = None,
     ) -> DiscoverResult:
         current_time = now or datetime.now()
-        since = current_time - timedelta(days=self.config.lookback_days)
+        since, until = self.config.resolve_time_window(current_time)
         normalized_owner_mids = sorted({int(owner_mid) for owner_mid in owner_mids})
         total_owners = len(normalized_owner_mids)
+        owner_since_overrides = owner_since_overrides or {}
 
         candidates: list[CandidateVideo] = []
         for index, owner_mid in enumerate(normalized_owner_mids, start=1):
             try:
-                author_candidates = self.author_source.fetch_recent_videos(owner_mid, since)
+                owner_since = owner_since_overrides.get(owner_mid, since)
+                author_candidates = self.author_source.fetch_recent_videos(owner_mid, owner_since, until)
             except Exception as exc:  # noqa: BLE001
                 if error_callback is not None:
                     error_callback(owner_mid, index, total_owners, exc)
@@ -128,6 +131,8 @@ class VideoPoolBuilder:
 
     def _allow_candidate(self, candidate: CandidateVideo, *, enforce_tid: bool) -> bool:
         if enforce_tid and not self.config.allows_tid(candidate.tid):
+            return False
+        if not self.config.allows_pubdate(candidate.pubdate):
             return False
         if not self.config.allows_duration(candidate.duration_seconds):
             return False

@@ -16,5 +16,10 @@ class SeedSource(Protocol):
 class AuthorVideoSource(Protocol):
     """Provides videos uploaded by the author in a time window."""
 
-    def fetch_recent_videos(self, owner_mid: int, since: datetime) -> list[CandidateVideo]:
-        """Return recent author videos within the lookback window."""
+    def fetch_recent_videos(
+        self,
+        owner_mid: int,
+        since: datetime,
+        until: datetime | None = None,
+    ) -> list[CandidateVideo]:
+        """Return author videos within the requested time window."""

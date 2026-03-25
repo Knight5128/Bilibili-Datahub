@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, time as dt_time, timedelta
 from html import escape
 import importlib
 from pathlib import Path
@@ -16,7 +16,10 @@ import streamlit as st
 from bili_pipeline.bilibili_zones import find_by_tid, list_zones, unique_mains
 from bili_pipeline.config import DiscoverConfig
 from bili_pipeline.discover import (
+    BilibiliHotSource,
     BilibiliUserRecentVideoSource,
+    BilibiliWeeklyHotSource,
+    BilibiliZoneTop10Source,
     VideoPoolBuilder,
     load_valid_partition_tids,
     resolve_owner_mids_from_bvids,
@@ -75,6 +78,9 @@ UID_EXPANSION_DIRNAME = "uid_expansions"
 UID_EXPANSION_STATE_FILENAME = "uid_expansion_state.json"
 UID_EXPANSION_SUMMARY_FILENAME = "uid_expansion_summary.log"
 UID_EXPANSION_ORIGINAL_UIDS_FILENAME = "original_uids.csv"
+DEFAULT_UID_EXPANSION_START_DATE = date(2025, 9, 23)
+HOT_400_PAGE_SIZE = 20
+HOT_400_MAX_PAGES = 20
 
 
 @dataclass(slots=True)
@@ -96,6 +102,23 @@ class UidExpansionSessionContext:
     logs_dir: Path
     part_number: int
     is_new_session: bool
+
+
+@dataclass(slots=True)
+class CustomSeedSelection:
+    include_daily_hot: bool
+    weekly_weeks: int
+    include_column_top: bool
+
+    def active_tokens(self) -> list[str]:
+        tokens: list[str] = []
+        if self.include_daily_hot:
+            tokens.append("daily_hot")
+        if self.weekly_weeks > 0:
+            tokens.append(f"weeklymustsee_{self.weekly_weeks}")
+        if self.include_column_top:
+            tokens.append("column_top")
+        return tokens
 
 
 def _build_logo_data_uri(logo_path: Path) -> str | None:
@@ -265,6 +288,78 @@ def _display_path(path: Path) -> str:
         return path.as_posix()
 
 
+def _format_date_token(value: datetime | date) -> str:
+    if isinstance(value, datetime):
+        value = value.date()
+    return value.strftime("%y%m%d")
+
+
+def _format_datetime_iso(value: datetime | None) -> str:
+    return value.isoformat() if value is not None else ""
+
+
+def _parse_datetime_iso(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _coerce_start_datetime(selected_date: date) -> datetime:
+    return datetime.combine(selected_date, dt_time.min)
+
+
+def _coerce_end_datetime(selected_date: date) -> datetime:
+    today = datetime.now().date()
+    if selected_date >= today:
+        return datetime.now()
+    return datetime.combine(selected_date, dt_time.max.replace(microsecond=0))
+
+
+def _build_window_token(start_at: datetime, end_at: datetime) -> str:
+    return f"{_format_date_token(start_at)}_to_{_format_date_token(end_at)}"
+
+
+def _build_custom_seed_base_name(selection: CustomSeedSelection, run_started_at: datetime) -> str:
+    tokens = selection.active_tokens()
+    if not tokens:
+        raise ValueError("至少需要选择一种抓取来源。")
+    return "_".join(tokens + [run_started_at.strftime("%Y%m%d_%H%M%S")])
+
+
+def _extract_owner_mids_from_entries(entries) -> tuple[list[int], list[str]]:
+    owner_mids: list[int] = []
+    missing_bvids: list[str] = []
+    for entry in entries:
+        if entry.owner_mid is None:
+            missing_bvids.append(entry.bvid)
+            continue
+        owner_mid = int(entry.owner_mid)
+        if owner_mid not in owner_mids:
+            owner_mids.append(owner_mid)
+    return owner_mids, missing_bvids
+
+
+def _derive_result_pubdate_window(result: DiscoverResult) -> tuple[datetime | None, datetime | None]:
+    pubdates = sorted(entry.pubdate for entry in result.entries if entry.pubdate is not None)
+    if not pubdates:
+        return None, None
+    return pubdates[0], pubdates[-1]
+
+
+def _read_owner_mid_csv(path: Path) -> list[int]:
+    try:
+        df = pd.read_csv(path)
+    except Exception:  # noqa: BLE001
+        return []
+    if "owner_mid" not in df.columns:
+        return []
+    owner_mids, _ = _extract_owner_mids(df, "owner_mid")
+    return owner_mids
+
+
 def _load_uid_expansion_state(session_dir: Path) -> dict:
     state_path = session_dir / UID_EXPANSION_STATE_FILENAME
     if not state_path.exists():
@@ -312,8 +407,14 @@ def _build_uid_expansion_summary_text(state: dict) -> str:
     lines = [
         "uid_expansion 任务总结",
         f"session_dir: {state.get('session_dir', '')}",
-        f"lookback_days: {state.get('lookback_days', '')}",
+        f"requested_window_start_at: {state.get('requested_window_start_at', '')}",
+        f"requested_window_end_at: {state.get('requested_window_end_at', '')}",
+        f"effective_window_start_at: {state.get('effective_window_start_at', '')}",
+        f"effective_window_end_at: {state.get('effective_window_end_at', '')}",
+        f"actual_window_start_at: {state.get('actual_window_start_at', '')}",
+        f"actual_window_end_at: {state.get('actual_window_end_at', '')}",
         f"original_uid_count: {state.get('original_uid_count', '')}",
+        f"history_reused_owner_count: {state.get('history_reused_owner_count', 0)}",
         f"part_count: {len(parts)}",
         f"interruption_count: {interruption_count}",
         f"total_video_count: {total_videos}",
@@ -333,6 +434,10 @@ def _build_uid_expansion_summary_text(state: dict) -> str:
                 f"  failed_owner_count={part.get('failed_owner_count', 0)}",
                 f"  remaining_owner_count={part.get('remaining_owner_count', 0)}",
                 f"  video_count={part.get('video_count', 0)}",
+                f"  effective_window_start_at={part.get('effective_window_start_at', '')}",
+                f"  effective_window_end_at={part.get('effective_window_end_at', '')}",
+                f"  actual_window_start_at={part.get('actual_window_start_at', '')}",
+                f"  actual_window_end_at={part.get('actual_window_end_at', '')}",
                 f"  processed_batches={part.get('processed_batches', 0)}/{part.get('total_batches', 0)}",
                 f"  stop_reason={stop_reason}",
                 f"  stopped_batch_index={part.get('stopped_batch_index', '')}",
@@ -354,7 +459,6 @@ def _find_matching_uid_expansion_session(
     root_dir: Path,
     uploaded_file_names: list[str],
     owner_mids: list[int],
-    lookback_days: int,
 ) -> tuple[Path | None, int | None]:
     matched_parts = []
     for file_name in uploaded_file_names:
@@ -370,9 +474,7 @@ def _find_matching_uid_expansion_session(
         return None, uploaded_part_number
 
     candidate_paths = sorted(
-        uid_expansions_root.glob(
-            f"uid_expansion_{lookback_days}_days_*/remaining_uids_part_{uploaded_part_number}.csv"
-        ),
+        uid_expansions_root.glob(f"*/remaining_uids_part_{uploaded_part_number}.csv"),
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
@@ -401,7 +503,8 @@ def _prepare_uid_expansion_session(
     root_dir: Path,
     uploaded_file_names: list[str],
     owner_mids: list[int],
-    lookback_days: int,
+    requested_start_at: datetime,
+    requested_end_at: datetime,
     logger=None,
 ) -> UidExpansionSessionContext:
     normalized_root_dir = _normalize_output_root(str(root_dir))
@@ -409,7 +512,6 @@ def _prepare_uid_expansion_session(
         normalized_root_dir,
         uploaded_file_names,
         owner_mids,
-        lookback_days,
     )
     if session_dir is not None:
         part_number = max(_infer_next_uid_expansion_part(session_dir), (uploaded_part_number or 0) + 1)
@@ -428,7 +530,11 @@ def _prepare_uid_expansion_session(
     session_dir = (
         normalized_root_dir
         / UID_EXPANSION_DIRNAME
-        / f"uid_expansion_{lookback_days}_days_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        / (
+            "uid_expansion_pending_"
+            f"{_build_window_token(requested_start_at, requested_end_at)}_"
+            f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
     )
     if logger is not None:
         if uploaded_part_number is not None:
@@ -446,9 +552,101 @@ def _prepare_uid_expansion_session(
     )
 
 
+def _resolve_uid_history_checkpoint(state: dict) -> datetime | None:
+    return (
+        _parse_datetime_iso(state.get("requested_window_end_at"))
+        or _parse_datetime_iso(state.get("effective_window_end_at"))
+        or _parse_datetime_iso(state.get("updated_at"))
+    )
+
+
+def _load_owner_history_cutoffs(root_dir: Path) -> dict[int, datetime]:
+    uid_expansions_root = _normalize_output_root(str(root_dir)) / UID_EXPANSION_DIRNAME
+    if not uid_expansions_root.exists():
+        return {}
+
+    checkpoints: dict[int, datetime] = {}
+    for session_dir in sorted(uid_expansions_root.iterdir(), key=lambda path: path.stat().st_mtime):
+        if not session_dir.is_dir():
+            continue
+        owner_mids = _read_owner_mid_csv(session_dir / UID_EXPANSION_ORIGINAL_UIDS_FILENAME)
+        if not owner_mids:
+            continue
+        checkpoint = _resolve_uid_history_checkpoint(_load_uid_expansion_state(session_dir))
+        if checkpoint is None:
+            continue
+        for owner_mid in owner_mids:
+            previous = checkpoints.get(owner_mid)
+            if previous is None or checkpoint > previous:
+                checkpoints[owner_mid] = checkpoint
+    return checkpoints
+
+
+def _build_owner_since_overrides(
+    owner_mids: list[int],
+    root_dir: Path,
+    requested_start_at: datetime,
+    requested_end_at: datetime,
+    logger=None,
+) -> tuple[dict[int, datetime], int]:
+    checkpoints = _load_owner_history_cutoffs(root_dir)
+    overrides: dict[int, datetime] = {}
+    reused_owner_count = 0
+    for owner_mid in owner_mids:
+        checkpoint = checkpoints.get(owner_mid)
+        if checkpoint is None:
+            continue
+        reused_owner_count += 1
+        overrides[owner_mid] = min(
+            max(requested_start_at, checkpoint + timedelta(seconds=1)),
+            requested_end_at,
+        )
+    if logger is not None:
+        logger(
+            f"[INFO]: 历史任务增量检查完成：{reused_owner_count} 个作者命中过往 original_uids，"
+            f"{len(owner_mids) - reused_owner_count} 个作者按全局 start_date 抓取。"
+        )
+    return overrides, reused_owner_count
+
+
+def _rename_uid_expansion_session_dir(
+    session: UidExpansionSessionContext,
+    state: dict,
+    logger=None,
+) -> tuple[UidExpansionSessionContext, Path | None]:
+    actual_start_at = _parse_datetime_iso(state.get("actual_window_start_at"))
+    actual_end_at = _parse_datetime_iso(state.get("actual_window_end_at"))
+    if actual_start_at is None or actual_end_at is None:
+        return session, None
+
+    base_name = f"uid_expansion_{_build_window_token(actual_start_at, actual_end_at)}"
+    parent_dir = session.session_dir.parent
+    target_dir = parent_dir / base_name
+    suffix = 2
+    while target_dir.exists() and target_dir != session.session_dir:
+        target_dir = parent_dir / f"{base_name}_{suffix}"
+        suffix += 1
+    if target_dir == session.session_dir:
+        return session, None
+
+    old_session_dir = session.session_dir
+    old_display = _display_path(old_session_dir)
+    session.session_dir.rename(target_dir)
+    session.session_dir = target_dir
+    session.logs_dir = target_dir / "logs"
+    state["session_dir"] = _display_path(target_dir)
+    _save_uid_expansion_state(target_dir, state)
+    if logger is not None:
+        logger(f"[INFO]: uid_expansion 会话目录已重命名：{old_display} -> {_display_path(target_dir)}")
+    return session, old_session_dir
+
+
 def _record_uid_expansion_part(
     session: UidExpansionSessionContext,
-    lookback_days: int,
+    requested_start_at: datetime,
+    requested_end_at: datetime,
+    owner_since_overrides: dict[int, datetime],
+    reused_owner_count: int,
     input_owner_count: int,
     outcome: OwnerBatchExportOutcome,
     video_path: Path,
@@ -458,6 +656,9 @@ def _record_uid_expansion_part(
     run_finished_at: str,
 ) -> dict:
     state = _load_uid_expansion_state(session.session_dir)
+    actual_start_at, actual_end_at = _derive_result_pubdate_window(outcome.result)
+    effective_start_candidates = list(owner_since_overrides.values()) or [requested_start_at]
+    effective_start_at = min(effective_start_candidates)
     parts = [part for part in state.get("parts", []) if int(part.get("part_number", 0)) != session.part_number]
     parts.append(
         {
@@ -473,6 +674,10 @@ def _record_uid_expansion_part(
             "total_batches": outcome.total_batches,
             "stopped_due_to_full_failed_batch": outcome.stopped_due_to_full_failed_batch,
             "stopped_batch_index": outcome.stopped_batch_index,
+            "effective_window_start_at": _format_datetime_iso(effective_start_at),
+            "effective_window_end_at": _format_datetime_iso(requested_end_at),
+            "actual_window_start_at": _format_datetime_iso(actual_start_at),
+            "actual_window_end_at": _format_datetime_iso(actual_end_at),
             "video_file": video_path.name,
             "remaining_file": remaining_path.name if remaining_path is not None else "",
             "log_file": (
@@ -484,11 +689,34 @@ def _record_uid_expansion_part(
     )
     parts.sort(key=lambda item: int(item.get("part_number", 0)))
     original_uid_count = int(state.get("original_uid_count") or input_owner_count)
+    previous_actual_start = _parse_datetime_iso(state.get("actual_window_start_at"))
+    previous_actual_end = _parse_datetime_iso(state.get("actual_window_end_at"))
     state.update(
         {
             "session_dir": _display_path(session.session_dir),
-            "lookback_days": int(lookback_days),
+            "requested_window_start_at": _format_datetime_iso(requested_start_at),
+            "requested_window_end_at": _format_datetime_iso(requested_end_at),
+            "effective_window_start_at": _format_datetime_iso(
+                min(
+                    effective_start_at,
+                    _parse_datetime_iso(state.get("effective_window_start_at")) or effective_start_at,
+                )
+            ),
+            "effective_window_end_at": _format_datetime_iso(requested_end_at),
+            "actual_window_start_at": _format_datetime_iso(
+                min(
+                    [value for value in (previous_actual_start, actual_start_at) if value is not None],
+                    default=actual_start_at,
+                )
+            ),
+            "actual_window_end_at": _format_datetime_iso(
+                max(
+                    [value for value in (previous_actual_end, actual_end_at) if value is not None],
+                    default=actual_end_at,
+                )
+            ),
             "original_uid_count": original_uid_count,
+            "history_reused_owner_count": max(int(state.get("history_reused_owner_count") or 0), reused_owner_count),
             "parts": parts,
             "updated_at": run_finished_at,
         }
@@ -499,7 +727,9 @@ def _record_uid_expansion_part(
 
 def _build_result_from_owner_mids_with_guardrails(
     owner_mids: list[int],
-    lookback_days: int,
+    requested_start_at: datetime,
+    requested_end_at: datetime,
+    owner_since_overrides: dict[int, datetime] | None = None,
     logger=None,
 ) -> OwnerBatchExportOutcome:
     normalized_owner_mids = list(dict.fromkeys(int(owner_mid) for owner_mid in owner_mids))
@@ -516,7 +746,7 @@ def _build_result_from_owner_mids_with_guardrails(
         )
 
     builder = VideoPoolBuilder(
-        config=DiscoverConfig(lookback_days=lookback_days),
+        config=DiscoverConfig(start_date=requested_start_at, end_date=requested_end_at),
         hot_sources=[],
         partition_sources=[],
         author_source=BilibiliUserRecentVideoSource(
@@ -528,6 +758,7 @@ def _build_result_from_owner_mids_with_guardrails(
             retry_backoff_seconds=CUSTOM_EXPORT_RETRY_BACKOFF_SECONDS,
         ),
     )
+    owner_since_overrides = owner_since_overrides or {}
     batches = _chunk_list(normalized_owner_mids, CUSTOM_EXPORT_BATCH_SIZE)
     merged_entries = {}
     failed_owner_mids: list[int] = []
@@ -550,6 +781,7 @@ def _build_result_from_owner_mids_with_guardrails(
 
         batch_result = builder.build_from_owner_mids(
             batch_owner_mids,
+            owner_since_overrides=owner_since_overrides,
             error_callback=_on_batch_error,
         )
         before_count = len(merged_entries)
@@ -647,6 +879,73 @@ def _build_full_site_result_with_latest_impl(**kwargs) -> DiscoverResult:
     return full_site_module.build_full_site_result(**kwargs)
 
 
+def _build_custom_seed_result(
+    selection: CustomSeedSelection,
+    valid_tids: list[int],
+    logger=None,
+) -> DiscoverResult:
+    candidates = []
+    if selection.include_daily_hot:
+        hot_source = BilibiliHotSource(
+            ps=HOT_400_PAGE_SIZE,
+            fetch_all_pages=True,
+            max_pages=HOT_400_MAX_PAGES,
+            request_interval_seconds=FULL_EXPORT_REQUEST_INTERVAL_SECONDS,
+            request_jitter_seconds=FULL_EXPORT_REQUEST_JITTER_SECONDS,
+            max_retries=FULL_EXPORT_MAX_RETRIES,
+            retry_backoff_seconds=FULL_EXPORT_RETRY_BACKOFF_SECONDS,
+        )
+        if logger is not None:
+            logger("[INFO]: 正在抓取当天全站热门视频（默认400条）。")
+        hot_candidates = hot_source.fetch()
+        candidates.extend(hot_candidates)
+        if logger is not None:
+            logger(f"[INFO]: 热门 400 条抓取完成，新增 {len(hot_candidates)} 条候选视频。")
+
+    if selection.weekly_weeks > 0:
+        for week in range(1, selection.weekly_weeks + 1):
+            if logger is not None:
+                logger(f"[INFO]: 正在抓取第 {week}/{selection.weekly_weeks} 期每周必看。")
+            weekly_candidates = BilibiliWeeklyHotSource(
+                week=week,
+                request_interval_seconds=FULL_EXPORT_REQUEST_INTERVAL_SECONDS,
+                request_jitter_seconds=FULL_EXPORT_REQUEST_JITTER_SECONDS,
+                max_retries=FULL_EXPORT_MAX_RETRIES,
+                retry_backoff_seconds=FULL_EXPORT_RETRY_BACKOFF_SECONDS,
+            ).fetch()
+            candidates.extend(weekly_candidates)
+            if logger is not None:
+                logger(f"[INFO]: 第 {week} 期每周必看抓取完成，新增 {len(weekly_candidates)} 条候选视频。")
+
+    if selection.include_column_top:
+        tid_batches = _chunk_list(valid_tids, FULL_EXPORT_PARTITION_BATCH_SIZE)
+        for batch_index, tid_batch in enumerate(tid_batches, start=1):
+            if logger is not None and len(tid_batches) > 1:
+                logger(f"[INFO]: 开始抓取第 {batch_index}/{len(tid_batches)} 批分区主流视频，共 {len(tid_batch)} 个 tid。")
+            for tid in tid_batch:
+                zone_source = BilibiliZoneTop10Source(tid=tid, day=1)
+                zone_candidates = zone_source.fetch()
+                candidates.extend(zone_candidates)
+                if logger is not None:
+                    logger(f"[INFO]: 分区 tid={tid} 当天主流视频抓取完成，新增 {len(zone_candidates)} 条候选视频。")
+            if batch_index < len(tid_batches):
+                if logger is not None:
+                    logger(f"[INFO]: 分区批次间暂停 {int(FULL_EXPORT_PARTITION_BATCH_PAUSE_SECONDS)} 秒。")
+                time.sleep(FULL_EXPORT_PARTITION_BATCH_PAUSE_SECONDS)
+
+    builder = VideoPoolBuilder(
+        config=DiscoverConfig(
+            start_date=datetime(2000, 1, 1),
+            end_date=datetime.now(),
+            enable_author_backfill=False,
+        ),
+        hot_sources=[],
+        partition_sources=[],
+        author_source=BilibiliUserRecentVideoSource(page_size=1, max_pages=1),
+    )
+    return builder.build_from_seed_candidates(candidates, now=datetime.now())
+
+
 page_config = {"page_title": "Bilibili Video Pool Builder", "layout": "centered"}
 if LOGO_PATH.exists():
     page_config["page_icon"] = str(LOGO_PATH)
@@ -654,16 +953,16 @@ st.set_page_config(**page_config)
 render_night_sky_background()
 _render_centered_header("Bilibili Video Pool Builder", LOGO_PATH)
 
-tab_full_export, tab_export, tab_tid, tab_custom_export, tab_merge, tab_quick_jump = st.tabs(
-    ["全量导出视频列表", "按分区导出视频列表", "tid与分区名称对应", "自定义导出视频列表", "文件拼接及去重", "快捷跳转"]
+tab_full_export, tab_custom_export, tab_merge, tab_quick_jump, tab_tid, tab_export = st.tabs(
+    ["自定义全量导出", "自定义导出视频列表", "文件拼接及去重", "快捷跳转", "tid与分区名称对应", "(DEPRECATED)按分区导出视频列表"]
 )
 
 with tab_full_export:
-    st.subheader("全量导出视频列表")
+    st.subheader("自定义全量导出")
     st.caption(
-        "一键汇总全站热门榜单、过去若干周的每周必看，以及 `all_valid_tags.csv` 中全部有效分区在 "
-        "`lookback_days` 内的投稿视频，并自动按 BVID 去重导出。当前已启用更保守的请求间隔、"
-        "重试退避与分批冷却，以降低长时间全量抓取时的 404 / 风控触发概率。"
+        "可自由选择抓取当日全站热门（默认400条）、过去 n 期每周必看、以及全部有效分区的当天主流视频，"
+        "并自动导出同批次的作者 UID 列表。当前已启用更保守的请求间隔、重试退避与分批冷却，"
+        "以降低长时间批量抓取时的 404 / 风控触发概率。"
     )
 
     valid_tid_count = None
@@ -671,57 +970,97 @@ with tab_full_export:
         valid_tid_count = len(_load_full_export_tids())
     except Exception as e:  # noqa: BLE001
         st.error(f"读取有效分区列表失败：{e}")
+    full_daily_hot = st.checkbox("抓取当日全站热门（默认400条）", value=True, key="full_export_daily_hot")
+    full_weekly_enabled = st.checkbox("抓取过去 n 期每周必看", value=True, key="full_export_weekly_enabled")
+    full_weekly_weeks = st.number_input(
+        "n（每周必看期数）",
+        min_value=1,
+        max_value=520,
+        value=12,
+        step=1,
+        disabled=not full_weekly_enabled,
+        key="full_export_weekly_weeks",
+    )
+    full_column_top = st.checkbox("抓取全部分区的当天主流视频", value=True, key="full_export_column_top")
+    full_selection = CustomSeedSelection(
+        include_daily_hot=bool(full_daily_hot),
+        weekly_weeks=int(full_weekly_weeks) if full_weekly_enabled else 0,
+        include_column_top=bool(full_column_top),
+    )
+    full_selection_signature = "|".join(full_selection.active_tokens()) or "none"
+    full_default_name = (
+        f"{'-'.join(full_selection.active_tokens())}-{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        if full_selection.active_tokens()
+        else f"custom_full_export-{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    )
+    full_default_out_path = str(_default_full_export_output_path(full_default_name))
+    if st.session_state.get("full_export_selection_signature") != full_selection_signature:
+        st.session_state["full_export_selection_signature"] = full_selection_signature
+        st.session_state["full_export_out_path"] = full_default_out_path
+    full_out_path = st.text_input(
+        "输出视频列表 CSV 文件路径",
+        value=full_default_out_path,
+        key="full_export_out_path",
+    )
+    st.caption("作者 UID 列表会自动保存到同目录下，并使用同一文件名前缀追加 `_authors.csv`。")
 
-    with st.form("full_export_params"):
-        full_lookback_days = st.number_input("lookback_days", min_value=1, max_value=3650, value=90, step=1)
-        default_full_name = f"full_site_{int(full_lookback_days)}_days_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        full_out_path = st.text_input("输出 CSV 文件路径", value=str(_default_full_export_output_path(default_full_name)))
-        full_submitted = st.form_submit_button("开始全量抓取并导出")
-
-    if valid_tid_count is not None:
-        weeks_to_fetch = int(full_lookback_days) // 7 + 1
-        st.caption(
-            f"将抓取：1 份全站热门榜单 + 过去 {weeks_to_fetch} 周每周必看 + {valid_tid_count} 个有效分区的近期投稿。"
-        )
+    if valid_tid_count is not None and full_selection.include_column_top:
+        st.caption(f"当前“全部分区的当天主流视频”将覆盖 `all_valid_tags.csv` 中的 {valid_tid_count} 个有效分区。")
 
     full_log_placeholder = st.empty()
-    if full_submitted:
+    if st.button("开始执行自定义全量导出", key="full_export_submit"):
         full_logs: list[str] = []
-        try:
-            valid_tids = _load_full_export_tids()
-        except Exception as e:  # noqa: BLE001
-            st.error(f"读取有效分区列表失败：{e}")
-        else:
-            def _log(message: str) -> None:
-                _append_log(full_logs, full_log_placeholder, message)
 
-            _log(f"[INFO]: 开始执行全量抓取任务，lookback_days={int(full_lookback_days)}。")
+        def _log(message: str) -> None:
+            _append_log(full_logs, full_log_placeholder, message)
+
+        if not full_selection.active_tokens():
+            st.warning("请至少选择一种抓取来源。")
+        else:
             try:
-                with st.spinner("正在抓取全站视频并构建 video_pool..."):
-                    result = _build_full_site_result_with_latest_impl(
-                        lookback_days=int(full_lookback_days),
-                        valid_tids=valid_tids,
-                        logger=_log,
-                        request_interval_seconds=FULL_EXPORT_REQUEST_INTERVAL_SECONDS,
-                        request_jitter_seconds=FULL_EXPORT_REQUEST_JITTER_SECONDS,
-                        max_retries=FULL_EXPORT_MAX_RETRIES,
-                        retry_backoff_seconds=FULL_EXPORT_RETRY_BACKOFF_SECONDS,
-                        partition_batch_size=FULL_EXPORT_PARTITION_BATCH_SIZE,
-                        partition_batch_pause_seconds=FULL_EXPORT_PARTITION_BATCH_PAUSE_SECONDS,
-                    )
-                    saved = export_discover_result_csv(result, full_out_path)
-                _log(f"[INFO]: 导出完成：{saved}")
+                valid_tids = _load_full_export_tids()
             except Exception as e:  # noqa: BLE001
-                _log(f"[ERROR]: 全量抓取任务失败：{_summarize_exception(e)}")
-                st.error(f"全量抓取失败：{e}")
+                st.error(f"读取有效分区列表失败：{e}")
             else:
-                st.success(f"已导出：{saved}")
-                st.caption(f"共 {len(result.entries)} 条 entries（展示前 200 条预览）")
-                _preview_discover_result(result)
-            finally:
-                _show_saved_log_path(
-                    _save_task_logs("full_export", full_logs, log_dir=FULL_SITE_FLOORINGS_LOGS_DIR)
-                )
+                try:
+                    with st.spinner("正在抓取自定义全量视频列表..."):
+                        _log(f"[INFO]: 开始执行自定义全量导出：{', '.join(full_selection.active_tokens())}。")
+                        result = _build_custom_seed_result(full_selection, valid_tids, logger=_log)
+                        saved = export_discover_result_csv(result, full_out_path)
+                        owner_mids, missing_bvids = _extract_owner_mids_from_entries(result.entries)
+                        if missing_bvids:
+                            _log(f"[WARN]: 有 {len(missing_bvids)} 条结果缺少 owner_mid，开始补做 BVID 回查。")
+                            fallback_owner_mids, failed_bvids = resolve_owner_mids_from_bvids(
+                                missing_bvids,
+                                request_interval_seconds=CUSTOM_EXPORT_REQUEST_INTERVAL_SECONDS,
+                                request_jitter_seconds=CUSTOM_EXPORT_REQUEST_JITTER_SECONDS,
+                                max_retries=CUSTOM_EXPORT_MAX_RETRIES,
+                                retry_backoff_seconds=CUSTOM_EXPORT_RETRY_BACKOFF_SECONDS,
+                            )
+                            for owner_mid in fallback_owner_mids:
+                                if owner_mid not in owner_mids:
+                                    owner_mids.append(owner_mid)
+                            if failed_bvids:
+                                _log(f"[WARN]: 仍有 {len(failed_bvids)} 个 BVID 无法回查作者。")
+                        authors_path = saved.with_name(f"{saved.stem}_authors.csv")
+                        authors_saved = _save_owner_mid_csv(owner_mids, authors_path)
+                    _log(f"[INFO]: 视频列表已导出：{saved}")
+                    _log(f"[INFO]: 作者 UID 列表已导出：{authors_saved}")
+                except Exception as e:  # noqa: BLE001
+                    _log(f"[ERROR]: 自定义全量导出失败：{_summarize_exception(e)}")
+                    st.error(f"自定义全量导出失败：{e}")
+                else:
+                    st.success(f"已导出视频列表：{saved}")
+                    st.caption(f"配套作者 UID 列表：`{_display_path(authors_saved)}`")
+                    st.caption(
+                        f"抓取来源 {', '.join(full_selection.active_tokens())}，"
+                        f"视频数 {len(result.entries)}，作者数 {len(owner_mids)}（展示前 200 条预览）"
+                    )
+                    _preview_discover_result(result)
+                finally:
+                    _show_saved_log_path(
+                        _save_task_logs("custom_full_export", full_logs, log_dir=FULL_SITE_FLOORINGS_LOGS_DIR)
+                    )
 
 with tab_export:
     with st.form("params"):
@@ -817,7 +1156,7 @@ with tab_custom_export:
     )
 
     tab_custom_bvid, tab_custom_owner, tab_failed_uid_log = st.tabs(
-        ["BVID回查作者ID➡️", "导出作者一段时间内上传视频列表🔁", "从日志提取失败作者UID"]
+        ["BVID回查UID(DEPRECATED)➡️", "导出作者一段时间内上传视频列表🔁", "从日志提取失败作者UID"]
     )
 
     with tab_custom_owner:
@@ -832,13 +1171,15 @@ with tab_custom_export:
             value="owner_mid",
             key="custom_owner_column",
         )
-        owner_lookback_days = st.number_input(
-            "lookback_days",
-            min_value=1,
-            max_value=3650,
-            value=90,
-            step=1,
-            key="custom_owner_lookback_days",
+        owner_start_date = st.date_input(
+            "start_date",
+            value=DEFAULT_UID_EXPANSION_START_DATE,
+            key="custom_owner_start_date",
+        )
+        owner_end_date = st.date_input(
+            "end_date",
+            value=datetime.now().date(),
+            key="custom_owner_end_date",
         )
         owner_out_path = st.text_input(
             "输出根目录（将自动在其下创建 uid_expansions/...）",
@@ -873,13 +1214,25 @@ with tab_custom_export:
 
                     if not owner_mids:
                         st.warning("未从上传文件中解析出有效的作者 ID。")
+                    elif owner_start_date > owner_end_date:
+                        st.warning("`start_date` 不能晚于 `end_date`。")
                     else:
+                        requested_start_at = _coerce_start_datetime(owner_start_date)
+                        requested_end_at = _coerce_end_datetime(owner_end_date)
                         output_root = _normalize_output_root(owner_out_path)
+                        owner_since_overrides, reused_owner_count = _build_owner_since_overrides(
+                            owner_mids,
+                            output_root,
+                            requested_start_at,
+                            requested_end_at,
+                            logger=_owner_log,
+                        )
                         session = _prepare_uid_expansion_session(
                             output_root,
                             [uploaded_file.name for uploaded_file in owner_files],
                             owner_mids,
-                            int(owner_lookback_days),
+                            requested_start_at,
+                            requested_end_at,
                             logger=_owner_log,
                         )
                         run_started_at = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -890,20 +1243,24 @@ with tab_custom_export:
 
                         _owner_log(f"[INFO]: 去重后共有 {len(owner_mids)} 个作者待抓取。")
                         _owner_log(
-                            f"[INFO]: 开始执行作者批量抓取任务，lookback_days={int(owner_lookback_days)}。"
+                            "[INFO]: 开始执行作者批量抓取任务，"
+                            f"start_date={requested_start_at.isoformat()}，end_date={requested_end_at.isoformat()}。"
                         )
                         _owner_log(
                             f"[INFO]: 本次 uid_expansion 会话目录：{_display_path(session.session_dir)}，当前 part_{session.part_number}。"
                         )
                         if session.is_new_session:
+                            session.session_dir.mkdir(parents=True, exist_ok=True)
                             original_uids_path = session.session_dir / UID_EXPANSION_ORIGINAL_UIDS_FILENAME
                             _save_owner_mid_csv(owner_mids, original_uids_path)
-                            _owner_log(f"[INFO]: 已保存首轮原始作者 UID 列表：{original_uids_path}")
+                            _owner_log(f"[INFO]: 已保存首轮原始作者 UID 列表：{_display_path(original_uids_path)}")
                         try:
                             with st.spinner("正在导出作者一段时间内上传视频列表..."):
                                 outcome = _build_result_from_owner_mids_with_guardrails(
                                     owner_mids,
-                                    int(owner_lookback_days),
+                                    requested_start_at,
+                                    requested_end_at,
+                                    owner_since_overrides=owner_since_overrides,
                                     logger=_owner_log,
                                 )
                                 video_output_path = session.session_dir / f"videolist_part_{session.part_number}.csv"
@@ -918,6 +1275,35 @@ with tab_custom_export:
                                         remaining_output_path,
                                     )
                                     _owner_log(f"[INFO]: 剩余作者 UID 已导出：{remaining_saved}")
+                                draft_state = _record_uid_expansion_part(
+                                    session,
+                                    requested_start_at,
+                                    requested_end_at,
+                                    owner_since_overrides,
+                                    reused_owner_count,
+                                    len(owner_mids),
+                                    outcome,
+                                    saved,
+                                    remaining_saved,
+                                    None,
+                                    run_started_at,
+                                    datetime.now().strftime("%Y%m%d_%H%M%S"),
+                                )
+                                session, old_session_dir = _rename_uid_expansion_session_dir(
+                                    session,
+                                    draft_state,
+                                    logger=_owner_log,
+                                )
+                                if old_session_dir is not None:
+                                    saved = session.session_dir / saved.name
+                                    if remaining_saved is not None:
+                                        remaining_saved = session.session_dir / remaining_saved.name
+                                actual_start_at, actual_end_at = _derive_result_pubdate_window(outcome.result)
+                                if actual_start_at is not None and actual_end_at is not None:
+                                    _owner_log(
+                                        "[INFO]: 本次实际抓取到的视频发布日期范围为 "
+                                        f"{actual_start_at.isoformat()} -> {actual_end_at.isoformat()}。"
+                                    )
                             _owner_log(f"[INFO]: 导出完成：{saved}")
                         except Exception as e:  # noqa: BLE001
                             _owner_log(f"[ERROR]: 作者批量抓取任务失败：{_summarize_exception(e)}")
@@ -959,7 +1345,10 @@ with tab_custom_export:
                             if outcome is not None and saved is not None:
                                 state = _record_uid_expansion_part(
                                     session,
-                                    int(owner_lookback_days),
+                                    requested_start_at,
+                                    requested_end_at,
+                                    owner_since_overrides,
+                                    reused_owner_count,
                                     len(owner_mids),
                                     outcome,
                                     saved,

@@ -165,6 +165,118 @@ class VideoPoolBuilderTest(unittest.TestCase):
         self.assertEqual([101, 202], result.owner_mids)
         self.assertEqual(["BV_author_1", "BV_author_2"], [entry.bvid for entry in result.entries])
 
+    def test_build_from_owner_mids_respects_start_and_end_date(self) -> None:
+        author_source = StaticAuthorVideoSource(
+            {
+                101: [
+                    CandidateVideo(
+                        bvid="BV_before_window",
+                        source_type="author_expand",
+                        source_ref="owner:101",
+                        discovered_at=self.now,
+                        owner_mid=101,
+                        tid=17,
+                        pubdate=self.now - timedelta(days=40),
+                        duration_seconds=120,
+                    ),
+                    CandidateVideo(
+                        bvid="BV_inside_window",
+                        source_type="author_expand",
+                        source_ref="owner:101",
+                        discovered_at=self.now,
+                        owner_mid=101,
+                        tid=17,
+                        pubdate=self.now - timedelta(days=10),
+                        duration_seconds=120,
+                    ),
+                    CandidateVideo(
+                        bvid="BV_after_window",
+                        source_type="author_expand",
+                        source_ref="owner:101",
+                        discovered_at=self.now,
+                        owner_mid=101,
+                        tid=17,
+                        pubdate=self.now + timedelta(days=1),
+                        duration_seconds=120,
+                    ),
+                ]
+            }
+        )
+
+        builder = VideoPoolBuilder(
+            config=DiscoverConfig(
+                start_date=self.now - timedelta(days=20),
+                end_date=self.now,
+            ),
+            hot_sources=[],
+            partition_sources=[],
+            author_source=author_source,
+        )
+
+        result = builder.build_from_owner_mids([101], now=self.now)
+        self.assertEqual(["BV_inside_window"], [entry.bvid for entry in result.entries])
+
+    def test_build_from_owner_mids_supports_owner_since_overrides(self) -> None:
+        author_source = StaticAuthorVideoSource(
+            {
+                101: [
+                    CandidateVideo(
+                        bvid="BV_old_overlap",
+                        source_type="author_expand",
+                        source_ref="owner:101",
+                        discovered_at=self.now,
+                        owner_mid=101,
+                        tid=17,
+                        pubdate=self.now - timedelta(days=12),
+                        duration_seconds=120,
+                    ),
+                    CandidateVideo(
+                        bvid="BV_new_incremental",
+                        source_type="author_expand",
+                        source_ref="owner:101",
+                        discovered_at=self.now,
+                        owner_mid=101,
+                        tid=17,
+                        pubdate=self.now - timedelta(days=3),
+                        duration_seconds=120,
+                    ),
+                ],
+                202: [
+                    CandidateVideo(
+                        bvid="BV_owner_202",
+                        source_type="author_expand",
+                        source_ref="owner:202",
+                        discovered_at=self.now,
+                        owner_mid=202,
+                        tid=33,
+                        pubdate=self.now - timedelta(days=8),
+                        duration_seconds=120,
+                    )
+                ],
+            }
+        )
+
+        builder = VideoPoolBuilder(
+            config=DiscoverConfig(
+                start_date=self.now - timedelta(days=20),
+                end_date=self.now,
+            ),
+            hot_sources=[],
+            partition_sources=[],
+            author_source=author_source,
+        )
+
+        result = builder.build_from_owner_mids(
+            [101, 202],
+            now=self.now,
+            owner_since_overrides={101: self.now - timedelta(days=5)},
+        )
+
+        self.assertEqual(
+            ["BV_new_incremental", "BV_owner_202"],
+            [entry.bvid for entry in result.entries],
+        )
+
     def test_build_from_owner_mids_skips_failed_author_and_reports_callback(self) -> None:
         now = self.now
 

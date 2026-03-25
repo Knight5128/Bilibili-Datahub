@@ -19,9 +19,15 @@ class StaticSeedSource(SeedSource):
 class StaticAuthorVideoSource(AuthorVideoSource):
     mapping: dict[int, list[CandidateVideo]]
 
-    def fetch_recent_videos(self, owner_mid: int, since: datetime) -> list[CandidateVideo]:
+    def fetch_recent_videos(
+        self,
+        owner_mid: int,
+        since: datetime,
+        until: datetime | None = None,
+    ) -> list[CandidateVideo]:
         results: list[CandidateVideo] = []
+        upper_bound = until or datetime.max
         for candidate in self.mapping.get(owner_mid, []):
-            if candidate.pubdate is None or candidate.pubdate >= since:
+            if candidate.pubdate is None or (since <= candidate.pubdate <= upper_bound):
                 results.append(candidate)
         return results

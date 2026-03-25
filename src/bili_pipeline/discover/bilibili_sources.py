@@ -370,10 +370,16 @@ class BilibiliUserRecentVideoSource(AuthorVideoSource):
     max_retries: int = 0
     retry_backoff_seconds: float = 3.0
 
-    def fetch_recent_videos(self, owner_mid: int, since: datetime) -> list[CandidateVideo]:
+    def fetch_recent_videos(
+        self,
+        owner_mid: int,
+        since: datetime,
+        until: datetime | None = None,
+    ) -> list[CandidateVideo]:
         discovered_at = datetime.now()
         user = User(owner_mid)
         candidates: list[CandidateVideo] = []
+        upper_bound = until or datetime.max
 
         for page_num in range(1, self.max_pages + 1):
             payload = _run_async_with_retry(
@@ -394,6 +400,8 @@ class BilibiliUserRecentVideoSource(AuthorVideoSource):
                     continue
                 if candidate.pubdate < since:
                     stop_paging = True
+                    continue
+                if candidate.pubdate > upper_bound:
                     continue
                 candidates.append(candidate)
 
