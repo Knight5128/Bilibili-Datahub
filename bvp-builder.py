@@ -360,6 +360,20 @@ def _read_owner_mid_csv(path: Path) -> list[int]:
     return owner_mids
 
 
+def _read_bvid_csv(path: Path) -> list[str]:
+    try:
+        df = pd.read_csv(path)
+    except Exception:  # noqa: BLE001
+        return []
+    if "bvid" not in df.columns:
+        return []
+    return _extract_bvids(df, "bvid")
+
+
+def _path_key(path: Path) -> str:
+    return str(path.resolve(strict=False))
+
+
 def _load_uid_expansion_state(session_dir: Path) -> dict:
     state_path = session_dir / UID_EXPANSION_STATE_FILENAME
     if not state_path.exists():
@@ -560,14 +574,20 @@ def _resolve_uid_history_checkpoint(state: dict) -> datetime | None:
     )
 
 
-def _load_owner_history_cutoffs(root_dir: Path) -> dict[int, datetime]:
+def _load_owner_history_cutoffs(
+    root_dir: Path,
+    excluded_session_dirs: list[Path] | None = None,
+) -> dict[int, datetime]:
     uid_expansions_root = _normalize_output_root(str(root_dir)) / UID_EXPANSION_DIRNAME
     if not uid_expansions_root.exists():
         return {}
 
+    excluded_keys = {_path_key(path) for path in (excluded_session_dirs or [])}
     checkpoints: dict[int, datetime] = {}
     for session_dir in sorted(uid_expansions_root.iterdir(), key=lambda path: path.stat().st_mtime):
         if not session_dir.is_dir():
+            continue
+        if _path_key(session_dir) in excluded_keys:
             continue
         owner_mids = _read_owner_mid_csv(session_dir / UID_EXPANSION_ORIGINAL_UIDS_FILENAME)
         if not owner_mids:
@@ -587,9 +607,10 @@ def _build_owner_since_overrides(
     root_dir: Path,
     requested_start_at: datetime,
     requested_end_at: datetime,
+    excluded_session_dirs: list[Path] | None = None,
     logger=None,
 ) -> tuple[dict[int, datetime], int]:
-    checkpoints = _load_owner_history_cutoffs(root_dir)
+    checkpoints = _load_owner_history_cutoffs(root_dir, excluded_session_dirs=excluded_session_dirs)
     overrides: dict[int, datetime] = {}
     reused_owner_count = 0
     for owner_mid in owner_mids:
@@ -607,6 +628,36 @@ def _build_owner_since_overrides(
             f"{len(owner_mids) - reused_owner_count} 个作者按全局 start_date 抓取。"
         )
     return overrides, reused_owner_count
+
+
+def _load_existing_uid_expansion_bvids(root_dir: Path) -> set[str]:
+    uid_expansions_root = _normalize_output_root(str(root_dir)) / UID_EXPANSION_DIRNAME
+    if not uid_expansions_root.exists():
+        return set()
+
+    existing_bvids: set[str] = set()
+    for videolist_path in uid_expansions_root.glob("*/videolist_part_*.csv"):
+        existing_bvids.update(_read_bvid_csv(videolist_path))
+    return existing_bvids
+
+
+def _drop_existing_uid_expansion_duplicates(
+    result: DiscoverResult,
+    root_dir: Path,
+    logger=None,
+) -> tuple[DiscoverResult, int]:
+    existing_bvids = _load_existing_uid_expansion_bvids(root_dir)
+    if not existing_bvids:
+        return result, 0
+
+    filtered_entries = [entry for entry in result.entries if entry.bvid not in existing_bvids]
+    removed_count = len(result.entries) - len(filtered_entries)
+    if logger is not None:
+        logger(
+            f"[INFO]: 全局 videolist 去重检查完成：历史任务中已有 {len(existing_bvids)} 个唯一 bvid，"
+            f"本次过滤掉 {removed_count} 条重复视频。"
+        )
+    return DiscoverResult(entries=filtered_entries, owner_mids=result.owner_mids), removed_count
 
 
 def _rename_uid_expansion_session_dir(
@@ -1220,19 +1271,20 @@ with tab_custom_export:
                         requested_start_at = _coerce_start_datetime(owner_start_date)
                         requested_end_at = _coerce_end_datetime(owner_end_date)
                         output_root = _normalize_output_root(owner_out_path)
-                        owner_since_overrides, reused_owner_count = _build_owner_since_overrides(
-                            owner_mids,
-                            output_root,
-                            requested_start_at,
-                            requested_end_at,
-                            logger=_owner_log,
-                        )
                         session = _prepare_uid_expansion_session(
                             output_root,
                             [uploaded_file.name for uploaded_file in owner_files],
                             owner_mids,
                             requested_start_at,
                             requested_end_at,
+                            logger=_owner_log,
+                        )
+                        owner_since_overrides, reused_owner_count = _build_owner_since_overrides(
+                            owner_mids,
+                            output_root,
+                            requested_start_at,
+                            requested_end_at,
+                            excluded_session_dirs=[session.session_dir],
                             logger=_owner_log,
                         )
                         run_started_at = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1263,6 +1315,16 @@ with tab_custom_export:
                                     owner_since_overrides=owner_since_overrides,
                                     logger=_owner_log,
                                 )
+                                outcome.result, removed_duplicate_video_count = _drop_existing_uid_expansion_duplicates(
+                                    outcome.result,
+                                    output_root,
+                                    logger=_owner_log,
+                                )
+                                if removed_duplicate_video_count:
+                                    _owner_log(
+                                        "[INFO]: 已在导出前移除与 `uid_expansions/` 历史 videolist 重复的视频条目，"
+                                        f"确保全局视频列表保持增量不重。"
+                                    )
                                 video_output_path = session.session_dir / f"videolist_part_{session.part_number}.csv"
                                 saved = export_discover_result_csv(outcome.result, video_output_path)
                                 _owner_log(f"[INFO]: 视频列表已导出：{saved}")

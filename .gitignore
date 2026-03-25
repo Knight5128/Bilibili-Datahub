@@ -22,3 +22,7 @@ outputs/
 Thumbs.db
 .vscode/
 .idea/
+
+TODO.md
+docs/
+__*.csv
