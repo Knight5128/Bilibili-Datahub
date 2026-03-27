@@ -1,6 +1,6 @@
 ## Bilibili_Video_Pool_Builder 简要说明
 
-**Bilibili_Video_Pool_Builder** 是一个基于 `bilibili-api` 的视频池构建小工具，用于从 Bilibili 抓取特定分区或全站多来源视频，并在需要时进一步收集这些视频作者在过去一段时间内的全部上传视频，最终生成结构化的 `video_pool` 数据集（可导出为 CSV）。
+**Bilibili_Video_Pool_Builder** 是一个基于 `bilibili-api` 的视频池构建小工具，用于从 Bilibili 抓取特定分区或全站多来源视频，并在需要时进一步收集这些视频作者在过去一段时间内的全部上传视频，最终生成结构化的 `video_pool` 数据集（可导出为 CSV）。当前这些核心能力也已经并入统一入口 `bilibili-datahub.py`；本说明文档保留对旧入口 `bvp-builder.py` 的说明，同时说明其在 `Bilibili DataHub` 中的对应关系。
 
 ### 核心功能
 
@@ -23,7 +23,13 @@
 
 ### 当前使用方式（简要）
 
-- 运行入口：在 `bilibili-data` 目录下运行 Streamlit 应用：
+- 推荐入口：若希望与 `Bilibili Video Data Crawler`、本地自动追踪共用同一前端，建议在 `bilibili-data` 目录下运行统一入口：
+
+```bash
+streamlit run bilibili-datahub.py
+```
+
+- 旧版独立入口仍可继续使用：
 
 ```bash
 streamlit run bvp-builder.py
@@ -32,6 +38,7 @@ streamlit run bvp-builder.py
 - Logo 资源目录：界面会优先读取 `assets/logos/bvp-builder.png` 作为浏览器标签页图标，并显示在主界面顶部的居中标题旁；若该文件不存在，则自动回退为纯文本标题。
 
 - 前端主要包含六个标签页，当前顺序如下：
+- 在 `Bilibili DataHub` 中，这些能力主要集中在 `视频列表构建` 与 `文件拼接及去重` 两个主标签页中，参数、默认输出目录和抓取逻辑保持一致。
 - **自定义全量导出**：可自由勾选“当日全站热门（默认 400 条）”“过去 n 期每周必看”“全部有效分区的当天主流视频”“抓取实时排行榜（每个分区实时显示 100 条）”四类来源，并自动生成视频列表 CSV 与同批次作者 UID CSV。默认输出路径位于 `outputs/video_pool/full_site_floorings/` 下，文件名会根据实际勾选来源自动命名，例如 `daily_hot-column_top-rankboard-20260325_153012.csv`。其中实时排行榜当前仅覆盖 UGC 榜单（如全站、动画、游戏、音乐、知识等），不包含番剧/国创/纪录片/电影/电视剧/综艺等 PGC 榜单；同时该功能抓取的是执行当下的实时榜单快照，并不提供历史排行榜回溯查询。若同一视频同时出现在多个榜单中，导出结果会分别保留这些榜单记录，并额外写出榜单分区与排名字段，便于后续把排行榜名次直接作为流行度分析变量使用。
 - **自定义导出视频列表**：包含三项功能。功能 A “**BVID回查作者ID➡️**” 可上传保存 BVID 的 CSV/XLSX 文件（默认列名 `bvid`，支持多文件拼接并按该列去重），仅回查并导出对应的唯一作者 `owner_mid` 列表，不再继续抓取这些作者的投稿视频；不过这一能力也已经整合进“**自定义全量导出**”中，用于自动生成配套 `_authors.csv`。功能 B “**导出作者一段时间内上传视频列表🔁**” 可上传保存作者 ID 的 CSV/XLSX 文件（默认列名 `owner_mid`，同样支持多文件拼接并按该列去重），直接导出这些作者在设定时间窗口内上传的全部视频；该模式默认以 `outputs/video_pool/` 为输出根目录，并会在 `outputs/video_pool/uid_expansions/` 下自动管理本轮任务。首次执行新的作者 UID 文件时会保存 `original_uids.csv`，并立即创建形如 `uid_expansion_<start_date>_<task_started_at>` 的任务目录，其中 `start_date` 精确到日期、`task_started_at` 精确到秒；每次执行都会按 part 编号写出 `videolist_part_n.csv` 与日志文件。若上传的是新的作者 UID 文件，程序会先把其中作者与 `uid_expansions/` 下除当前任务外的历史 `original_uids.csv` 做比对；命中过往任务的作者会从其最近一次出现任务的开始日期当天 `00:00:00` 起继续增量抓取，未命中的作者则按本次 `start_date` 到 `end_date` 全量抓取。若某一批作者全部抓取失败，程序会立即停止后续批次，并把本次抓取失败和尚未抓取的作者统一导出为 `remaining_uids_part_n.csv`；若整轮跑完后仍有零散失败作者，也会同样导出 `remaining_uids_part_n.csv` 供继续重试。再次上传 `remaining_uids_part_n.csv` 时，程序会自动识别并继续保存为下一次 `part_(n+1)`，原任务目录保持不变。为尽量保证整个 `uid_expansions/` 目录下所有任务的所有 `videolist` 两两不重复，功能 B 在导出前还会把本次结果与既有 `videolist_part_n.csv` 做一次基于 `bvid` 的全局去重。当全部作者都抓取完成后，会在同目录下额外生成一份独立的 `uid_expansion_summary.log`，汇总中断次数、各 part 成功抓取条目数等信息；分 part 日志和总结日志都会带有 `[TIMESTAMP][BEGIN]` / `[TIMESTAMP][END]` 起止标记。功能 C 可上传 `.log/.txt` 抓取日志文件或直接粘贴日志文本，从形如“`[WARN]: 作者 889299 抓取失败，已跳过。原因：...`”的失败行中提取 `owner_mid`，去重并按升序导出为单列 CSV。功能 B 的日志会同步归档到对应 `uid_expansion` 目录下的 `logs/` 子目录。
 - **文件拼接及去重**：上传多个本地 CSV/XLSX 文件（通常为已导出的 `video_pool`），指定一个或多个排序键进行拼接；当排序键留空时，默认按主键 `bvid` 降序排序。若勾选去重，则可进一步填写去重键与保留键，系统会在导出拼接文件的同时，额外导出一份去重后的文件；去重时默认优先保留获取时间较晚的记录，若时间相同则保留拼接结果中排在前面的一条。
@@ -44,4 +51,5 @@ streamlit run bvp-builder.py
 - 当对 **Bilibili_Video_Pool_Builder** 的功能、参数、使用方式或 UI 结构进行实质性修改时：
   - 需要同步检查并更新本说明文档，保证其准确反映当前实现。
   - 特别是：抓取逻辑（数据来源、窗口设置）、导出格式（字段定义）、前端入口与标签页结构发生变化时，务必更新相关描述。
+  - 若这些能力是在 `bilibili-datahub.py` 中调整的，也应同步回看本说明文档，保证旧入口说明与统一入口说明不冲突。
 

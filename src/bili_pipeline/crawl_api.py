@@ -17,6 +17,7 @@ from bili_pipeline.media import stream_media_to_store as _stream_media_to_store
 from bili_pipeline.models import (
     BatchCrawlReport,
     CommentSnapshot,
+    CrawlTaskMode,
     FullCrawlSummary,
     GCPStorageConfig,
     MediaDownloadStrategy,
@@ -70,6 +71,26 @@ def _timestamp_for_log(value: datetime) -> str:
 
 def _summary_succeeded(summary: FullCrawlSummary) -> bool:
     return summary.meta_ok and summary.stat_ok and summary.comment_ok and summary.media_ok
+
+
+def _coerce_task_mode(task_mode: CrawlTaskMode | str | None) -> CrawlTaskMode:
+    if isinstance(task_mode, CrawlTaskMode):
+        return task_mode
+    if isinstance(task_mode, str) and task_mode.strip():
+        return CrawlTaskMode(task_mode.strip())
+    return CrawlTaskMode.FULL_BUNDLE
+
+
+def _resolve_stage_flags(
+    *,
+    task_mode: CrawlTaskMode | str | None,
+    enable_media: bool,
+) -> tuple[CrawlTaskMode, bool, bool, bool]:
+    resolved_mode = _coerce_task_mode(task_mode)
+    include_meta = resolved_mode in {CrawlTaskMode.FULL_BUNDLE, CrawlTaskMode.ONCE_ONLY}
+    include_realtime = resolved_mode in {CrawlTaskMode.FULL_BUNDLE, CrawlTaskMode.REALTIME_ONLY}
+    include_media = resolved_mode in {CrawlTaskMode.FULL_BUNDLE, CrawlTaskMode.ONCE_ONLY} and bool(enable_media)
+    return resolved_mode, include_meta, include_realtime, include_media
 
 
 def _append_task_log(logs: list[str], message: str) -> None:
@@ -231,6 +252,7 @@ def _build_batch_crawl_summary_text(state: dict[str, Any]) -> str:
         f"session_started_at: {state.get('session_started_at', '')}",
         f"session_completed_at: {state.get('session_completed_at', '')}",
         f"original_csv_name: {state.get('original_csv_name', '')}",
+        f"task_mode: {state.get('task_mode', '')}",
         f"original_bvid_count: {state.get('original_bvid_count', 0)}",
         f"part_count: {len(parts)}",
         f"interruption_count: {interruption_count}",
@@ -244,6 +266,7 @@ def _build_batch_crawl_summary_text(state: dict[str, Any]) -> str:
                 f"  started_at: {part.get('subtask_started_at', '')}",
                 f"  finished_at: {part.get('subtask_finished_at', '')}",
                 f"  source_csv_name: {part.get('source_csv_name', '')}",
+                f"  task_mode: {part.get('task_mode', '')}",
                 f"  input_bvid_count: {part.get('input_bvid_count', 0)}",
                 f"  processed_count: {part.get('processed_count', 0)}",
                 f"  success_count: {part.get('success_count', 0)}",
@@ -278,6 +301,7 @@ def _record_batch_crawl_part(
     *,
     session: BatchCrawlSessionContext,
     source_csv_name: str,
+    task_mode: str,
     input_bvid_count: int,
     processed_count: int,
     success_count: int,
@@ -298,6 +322,7 @@ def _record_batch_crawl_part(
         {
             "part_number": session.part_number,
             "source_csv_name": source_csv_name,
+            "task_mode": task_mode,
             "subtask_started_at": subtask_started_at.isoformat(),
             "subtask_finished_at": subtask_finished_at.isoformat(),
             "input_bvid_count": input_bvid_count,
@@ -319,6 +344,7 @@ def _record_batch_crawl_part(
             "session_started_at": state.get("session_started_at") or subtask_started_at.isoformat(),
             "session_completed_at": subtask_finished_at.isoformat() if remaining_count == 0 else "",
             "original_csv_name": state.get("original_csv_name") or source_csv_name,
+            "task_mode": state.get("task_mode") or task_mode,
             "original_bvid_count": int(state.get("original_bvid_count") or original_bvid_count),
             "completed_all": remaining_count == 0,
             "parts": parts,
@@ -390,6 +416,7 @@ def crawl_full_video_bundle(
     bvid: str,
     *,
     enable_media: bool = True,
+    task_mode: CrawlTaskMode | str | None = None,
     comment_limit: int = 10,
     gcp_config: GCPStorageConfig | None = None,
     max_height: int = 1080,
@@ -398,40 +425,48 @@ def crawl_full_video_bundle(
     credential: Any | None = None,
 ) -> FullCrawlSummary:
     resolved_config = _resolve_gcp_config(gcp_config, media_strategy)
+    resolved_mode, include_meta, include_realtime, include_media = _resolve_stage_flags(
+        task_mode=task_mode,
+        enable_media=enable_media,
+    )
     errors: list[str] = []
     meta_result = None
     stat_snapshot = None
     comment_snapshot = None
     media_result = None
 
-    try:
-        meta_result = crawl_video_meta(bvid, gcp_config=resolved_config, credential=credential)
-        meta_ok = True
-    except Exception as exc:  # noqa: BLE001
-        meta_ok = False
-        errors.append(f"meta: {exc}")
+    meta_ok = not include_meta
+    if include_meta:
+        try:
+            meta_result = crawl_video_meta(bvid, gcp_config=resolved_config, credential=credential)
+            meta_ok = True
+        except Exception as exc:  # noqa: BLE001
+            meta_ok = False
+            errors.append(f"meta: {exc}")
 
-    try:
-        stat_snapshot = crawl_stat_snapshot(bvid, gcp_config=resolved_config, credential=credential)
-        stat_ok = True
-    except Exception as exc:  # noqa: BLE001
-        stat_ok = False
-        errors.append(f"stat: {exc}")
+    stat_ok = not include_realtime
+    comment_ok = not include_realtime
+    if include_realtime:
+        try:
+            stat_snapshot = crawl_stat_snapshot(bvid, gcp_config=resolved_config, credential=credential)
+            stat_ok = True
+        except Exception as exc:  # noqa: BLE001
+            stat_ok = False
+            errors.append(f"stat: {exc}")
+        try:
+            comment_snapshot = crawl_latest_comments(
+                bvid,
+                gcp_config=resolved_config,
+                limit=comment_limit,
+                credential=credential,
+            )
+            comment_ok = True
+        except Exception as exc:  # noqa: BLE001
+            comment_ok = False
+            errors.append(f"comment: {exc}")
 
-    try:
-        comment_snapshot = crawl_latest_comments(
-            bvid,
-            limit=comment_limit,
-            gcp_config=resolved_config,
-            credential=credential,
-        )
-        comment_ok = True
-    except Exception as exc:  # noqa: BLE001
-        comment_ok = False
-        errors.append(f"comment: {exc}")
-
-    media_ok = not enable_media
-    if enable_media:
+    media_ok = not include_media
+    if include_media:
         try:
             media_result = crawl_media_assets(
                 bvid,
@@ -453,6 +488,7 @@ def crawl_full_video_bundle(
         comment_ok=comment_ok,
         media_ok=media_ok,
         snapshot_time=datetime.now(),
+        task_mode=resolved_mode.value,
         errors=errors,
         meta_result=meta_result,
         stat_snapshot=stat_snapshot,
@@ -466,6 +502,7 @@ def crawl_bvid_list_from_csv(
     *,
     parallelism: int = 4,
     enable_media: bool = True,
+    task_mode: CrawlTaskMode | str | None = None,
     comment_limit: int = 10,
     consecutive_failure_limit: int = 10,
     gcp_config: GCPStorageConfig | None = None,
@@ -477,6 +514,10 @@ def crawl_bvid_list_from_csv(
     source_csv_name: str | None = None,
 ) -> BatchCrawlReport:
     resolved_config = _resolve_gcp_config(gcp_config, media_strategy)
+    resolved_mode, include_meta, include_realtime, include_media = _resolve_stage_flags(
+        task_mode=task_mode,
+        enable_media=enable_media,
+    )
     fieldnames, original_rows, bvids = _read_csv_rows(csv_path)
     source_name = (source_csv_name or Path(csv_path).name).strip() or Path(csv_path).name
     session = _prepare_batch_crawl_session(output_root_dir, source_name, bvids)
@@ -503,6 +544,10 @@ def crawl_bvid_list_from_csv(
             "part_number": session.part_number,
             "parallelism": parallelism,
             "effective_parallelism": effective_parallelism,
+            "task_mode": resolved_mode.value,
+            "include_meta": include_meta,
+            "include_realtime": include_realtime,
+            "include_media": include_media,
             "enable_media": enable_media,
             "comment_limit": comment_limit,
             "consecutive_failure_limit": consecutive_failure_limit,
@@ -531,6 +576,7 @@ def crawl_bvid_list_from_csv(
         return crawl_full_video_bundle(
             item_bvid,
             enable_media=enable_media,
+            task_mode=resolved_mode,
             comment_limit=comment_limit,
             gcp_config=resolved_config,
             max_height=max_height,
@@ -630,6 +676,7 @@ def crawl_bvid_list_from_csv(
     state, state_path = _record_batch_crawl_part(
         session=session,
         source_csv_name=source_name,
+        task_mode=resolved_mode.value,
         input_bvid_count=len(bvids),
         processed_count=processed_count,
         success_count=success_count,
@@ -664,6 +711,7 @@ def crawl_bvid_list_from_csv(
         remaining_count=len(remaining_bvids),
         started_at=started_at,
         finished_at=finished_at,
+        task_mode=resolved_mode.value,
         summaries=summaries,
         part_number=session.part_number,
         effective_parallelism=effective_parallelism,

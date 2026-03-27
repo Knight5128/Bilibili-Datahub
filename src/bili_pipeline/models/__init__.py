@@ -2,6 +2,7 @@
 
 from .crawl import (
     BatchCrawlReport,
+    CrawlTaskMode,
     CommentItem,
     CommentSnapshot,
     FullCrawlSummary,
@@ -20,6 +21,7 @@ __all__ = [
     "CandidateVideo",
     "CommentItem",
     "CommentSnapshot",
+    "CrawlTaskMode",
     "DiscoverResult",
     "FullCrawlSummary",
     "GCPStorageConfig",

@@ -1,12 +1,12 @@
 ## Bilibili Video Data Crawler 简要说明
 
-**Bilibili Video Data Crawler** 是一个基于 `bilibili-api-python` + `Streamlit` 的视频数据采集工具，用于在已有 `video_pool` 或指定 `bvid` 的基础上，抓取并存储四类数据：**视频元数据、流行度时间序列、评论快照、多模态媒体数据**。当前版本已重构为 **Google Cloud** 存储方案：**结构化结果统一写入 BigQuery**，**视频/音频媒体文件统一写入 Google Cloud Storage（GCS）**，便于后续在 **Google Colab Notebook** 中直接完成加载、抽样、训练与分析；其中视频元数据已扩展覆盖更丰富的**分区、分辨率、权限状态、上传用户资料与空间概览信息**。
+**Bilibili Video Data Crawler** 是一个基于 `bilibili-api-python` + `Streamlit` 的视频数据采集工具，用于在已有 `video_pool` 或指定 `bvid` 的基础上，抓取并存储四类数据：**视频元数据、流行度时间序列、评论快照、多模态媒体数据**。当前版本已重构为 **Google Cloud** 存储方案：**结构化结果统一写入 BigQuery**，**视频/音频媒体文件统一写入 Google Cloud Storage（GCS）**，便于后续在 **Google Colab Notebook** 中直接完成加载、抽样、训练与分析；其中视频元数据已扩展覆盖更丰富的**分区、分辨率、权限状态、上传用户资料与空间概览信息**。这些能力现在也已被整合进统一入口 `bilibili-datahub.py`，本说明文档主要对应旧入口 `bvd-crawler.py`，同时说明其在 `Bilibili DataHub` 中的继承关系。
 
 ### 核心功能
 
 - **单 bvid 全流程抓取**：对一个 `bvid` 依次执行元数据、统计快照、最热评论快照和媒体数据抓取，并输出阶段级摘要，同时将本次测试日志写入 `outputs/video_data/test_crawls/single_bvid_<date>_<time>/`；日志文件开头与结尾会额外写入 `[TIMESTAMP][BEGIN]` / `[TIMESTAMP][END]`，标记本次记录的精确起止时间。
 - **增强元数据抓取**：在 `Meta` 阶段除基础标题、简介、标签外，还补充抓取分区、封面、动态文案、分辨率、权限对象、上传用户资料、粉丝/关注关系和空间概览统计等信息。
-- **CSV 批量抓取**：上传包含 `bvid` 列的 CSV 文件后，系统会在 `outputs/video_data/batch_crawls/batch_crawl_<date>_<time>/` 下集中保存该批任务的剩余 CSV、状态文件与日志；当连续失败条数达到侧边栏阈值时，会自动暂停当前子任务，并导出剔除已成功条目的 `remaining_bvids_part_n.csv` 供后续续跑。子任务日志与最终汇总日志同样都会带有 `[TIMESTAMP][BEGIN]` / `[TIMESTAMP][END]` 起止标记。
+- **CSV 批量抓取**：上传包含 `bvid` 列的 CSV 文件后，系统会在 `outputs/video_data/batch_crawls/batch_crawl_<date>_<time>/` 下集中保存该批任务的剩余 CSV、状态文件与日志；当连续失败条数达到侧边栏阈值时，会自动暂停当前子任务，并导出剔除已成功条目的 `remaining_bvids_part_n.csv` 供后续续跑。子任务日志与最终汇总日志同样都会带有 `[TIMESTAMP][BEGIN]` / `[TIMESTAMP][END]` 起止标记。在 `Bilibili DataHub` 中，这一批量抓取已拆分为“评论/互动量实时数据”和“元数据/媒体一次性数据”两类开关，可独立选择。
 - **四类接口单独调试**：在前端分别调用 Meta、Stat、Comment、Media 四类接口，便于调试和小规模实验；每次调用都会将调试日志写入 `outputs/video_data/test_crawls/<meta/stat/comment/media>_api_<date>_<time>/`，并在日志首尾自动补充 `[TIMESTAMP][BEGIN]` / `[TIMESTAMP][END]`。
 - **Google 云端双层存储**：视频元数据、评论快照、统计快照、批量运行记录，以及媒体对象的 `object_key / bucket / endpoint / hash / size` 等信息统一写入 BigQuery；视频与音频媒体文件通过下载直链分块读取后直接上传到 GCS。
 - **媒体流式上传到 GCS**：媒体抓取阶段以流式方式从 B 站下载音视频，并同步写入 GCS Bucket，适合后续在 Google Colab、Vertex AI 或其他 Google 生态工具中直接读取。
@@ -27,7 +27,13 @@
 
 ### 当前使用方式（简要）
 
-- 运行入口：在 `bilibili-data` 目录下运行 Streamlit 应用：
+- 推荐入口：若希望与视频列表发现、作者扩展以及本地自动追踪共用同一前端，建议在 `bilibili-data` 目录下运行统一入口：
+
+```bash
+streamlit run bilibili-datahub.py
+```
+
+- 旧版独立入口仍可继续使用：
 
 ```bash
 streamlit run bvd-crawler.py
@@ -37,8 +43,9 @@ streamlit run bvd-crawler.py
 - 默认背景：主界面默认使用黑色夜空 + 白色流星划过的动态背景；若需要调整流星数量、速度、长度等动画参数，可修改 `src/bili_pipeline/utils/streamlit_night_sky.py` 中的 `NightSkyConfig` 默认值。
 
 - 前端主要包含五个主菜单，并在页面右侧常驻一个可收起的字段定义面板：
+- 在 `Bilibili DataHub` 中，这些能力主要集中在 `视频数据抓取` 与 `BigQuery / GCS 数据查看` 两个主标签页中，原有字段定义面板、Google Cloud 配置和调试能力保持兼容。
   - **单 bvid 全流程**：输入一个 `bvid`，顺序执行四类抓取逻辑。
-  - **CSV 批量抓取**：上传带 `bvid` 列的 CSV，批量执行全流程抓取。
+  - **CSV 批量抓取**：上传带 `bvid` 列的 CSV，批量执行全流程抓取；在 `Bilibili DataHub` 中可进一步拆分为 `realtime_only`（评论/互动量）和 `once_only`（元数据/媒体）两类任务。
   - **四类接口调试**：分别调用 `crawl_video_meta`、`crawl_stat_snapshot`、`crawl_latest_comments`、`stream_media_to_store/crawl_media_assets`；其中 `Meta` 调试页会额外展开展示标签详情、视频权限对象、上传用户资料、关系快照与空间概览，并将每次调试结果保存为独立日志。
   - **BigQuery / GCS 数据查看**：查看某个 `bvid` 已入库的视频元数据、最新统计快照、最热评论快照和媒体资产信息，并在有媒体资产时通过“导出该 bvid 的媒体文件为本地文件”面板直接从 GCS 回读视频/音频 `.m4s` 文件。
   - **快捷跳转**：输入单个 `bvid` 或作者 ID，也可直接粘贴 B 站视频链接/作者主页链接，界面会自动提取有效标识并在系统默认浏览器中打开目标页面。
@@ -55,6 +62,7 @@ streamlit run bvd-crawler.py
 - 默认本地导出根目录为 `outputs/video_data/`：
   - `batch_crawls/`：保存每个 CSV 批量任务的会话目录、`remaining_bvids_part_n.csv`、`batch_crawl_state.json`、子任务日志，以及在整轮完成后生成的汇总日志；
   - `test_crawls/`：保存“单 bvid 全流程”和“四类接口调试”的本地日志，便于核对 GCS 路径、接口返回结果与报错信息。
+  - 在 `Bilibili DataHub` 的自动追踪页中，还会复用 `tracker_meta_media_queue` 作为“待补元数据/媒体数据”清单来源，用于增量消化只需抓取一次的数据。
 
 ### 维护约定
 
@@ -62,3 +70,4 @@ streamlit run bvd-crawler.py
   - 需要同步检查并更新本说明文档，保证文档与当前实现一致。
   - 特别是：四类接口的输入输出、媒体流式入库策略、BigQuery / GCS 接入方式、批量抓取行为、标签页结构发生变化时，务必更新相关描述。
   - 若新增单视频抓取字段或新的数据模块，应同步更新 `src/bili_pipeline/field_reference.py`，以保持前端“字段定义”页与 `Bilibili_Video_Data_Crawler_Field_Definitions.md` 文档一致。
+  - 若这些调整是先在 `bilibili-datahub.py` 中完成的，也应同步检查本说明文档中的旧入口描述与统一入口描述。

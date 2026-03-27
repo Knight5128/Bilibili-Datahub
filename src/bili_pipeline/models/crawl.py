@@ -2,12 +2,28 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
 
 def _dt(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
+
+
+class CrawlTaskMode(str, Enum):
+    FULL_BUNDLE = "full_bundle"
+    REALTIME_ONLY = "realtime_only"
+    ONCE_ONLY = "once_only"
+
+    def includes_meta(self) -> bool:
+        return self in {self.FULL_BUNDLE, self.ONCE_ONLY}
+
+    def includes_realtime(self) -> bool:
+        return self in {self.FULL_BUNDLE, self.REALTIME_ONLY}
+
+    def includes_media(self) -> bool:
+        return self in {self.FULL_BUNDLE, self.ONCE_ONLY}
 
 
 @dataclass(slots=True)
@@ -343,6 +359,7 @@ class FullCrawlSummary:
     comment_ok: bool
     media_ok: bool
     snapshot_time: datetime | None
+    task_mode: str = CrawlTaskMode.FULL_BUNDLE.value
     errors: list[str] = field(default_factory=list)
     meta_result: MetaResult | None = None
     stat_snapshot: StatSnapshot | None = None
@@ -357,6 +374,7 @@ class FullCrawlSummary:
             "comment_ok": self.comment_ok,
             "media_ok": self.media_ok,
             "snapshot_time": _dt(self.snapshot_time),
+            "task_mode": self.task_mode,
             "errors": self.errors,
             "meta_result": self.meta_result.to_dict() if self.meta_result else None,
             "stat_snapshot": self.stat_snapshot.to_dict() if self.stat_snapshot else None,
@@ -375,6 +393,7 @@ class BatchCrawlReport:
     remaining_count: int
     started_at: datetime
     finished_at: datetime
+    task_mode: str = CrawlTaskMode.FULL_BUNDLE.value
     summaries: list[FullCrawlSummary] = field(default_factory=list)
     part_number: int = 1
     effective_parallelism: int = 1
@@ -401,6 +420,7 @@ class BatchCrawlReport:
             "remaining_count": self.remaining_count,
             "started_at": _dt(self.started_at),
             "finished_at": _dt(self.finished_at),
+            "task_mode": self.task_mode,
             "part_number": self.part_number,
             "effective_parallelism": self.effective_parallelism,
             "consecutive_failure_limit": self.consecutive_failure_limit,
