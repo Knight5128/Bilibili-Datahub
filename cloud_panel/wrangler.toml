@@ -1,0 +1,25 @@
+name = "bilibili-cloud-panel"
+main = "src/index.js"
+compatibility_date = "2026-03-27"
+
+[observability]
+enabled = true
+
+[vars]
+CF_ACCESS_REQUIRED = "true"
+TRACKER_BASE_URL = "https://your-cloud-run-service-url"
+GCP_PROJECT_ID = "your-gcp-project-id"
+GCP_REGION = "asia-east1"
+CLOUD_RUN_SERVICE = "bilibili-cloud-tracker"
+CLOUD_SCHEDULER_LOCATION = "asia-east1"
+CLOUD_SCHEDULER_JOB = "bilibili-cloud-tracker-2h"
+CLOUD_RUN_TIMEOUT_SECONDS = "1800"
+CLOUD_RUN_MAX_INSTANCES = "1"
+CLOUD_RUN_CONCURRENCY = "1"
+TRACKER_DEFAULT_ENV_KEYS = "GCP_PROJECT_ID,BQ_DATASET,GCS_BUCKET,GCP_REGION,TRACKER_CRAWL_INTERVAL_HOURS,TRACKER_TRACKING_WINDOW_DAYS,TRACKER_COMMENT_LIMIT,TRACKER_AUTHOR_BOOTSTRAP_DAYS,TRACKER_MAX_VIDEOS_PER_CYCLE,TRACKER_SNAPSHOT_WORKERS"
+
+# Required secrets to set with `wrangler secret put`:
+# - TRACKER_ADMIN_TOKEN
+# - GOOGLE_SERVICE_ACCOUNT_JSON
+# Optional secrets:
+# - CF_ACCESS_ALLOWED_EMAILS

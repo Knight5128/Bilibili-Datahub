@@ -1,0 +1,15 @@
+.git
+.cursor
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+outputs
+.local
+.pytest_cache
+agent-transcripts
+*.log
+*.db
+*.sqlite
+*.sqlite3
