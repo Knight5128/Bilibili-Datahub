@@ -171,6 +171,18 @@ class TrackerStore:
         job_config = bigquery.QueryJobConfig(query_parameters=params or [])
         return list(self.client.query(sql, job_config=job_config).result())
 
+    def _append_rows(
+        self,
+        *,
+        table_id: str,
+        schema: list[bigquery.SchemaField],
+        rows: list[dict[str, Any]],
+    ) -> None:
+        if not rows:
+            return
+        job_config = bigquery.LoadJobConfig(schema=schema, write_disposition="WRITE_APPEND")
+        self.client.load_table_from_json(rows, table_id, job_config=job_config).result()
+
     def _load_temp_rows(
         self,
         *,
@@ -196,7 +208,13 @@ class TrackerStore:
 
     def ensure_control_row(self, defaults: dict[str, Any]) -> dict[str, Any]:
         rows = self._query(
-            f"SELECT * FROM `{self.tracker_table_id('run_control')}` WHERE control_key = 'singleton' LIMIT 1"
+            f"""
+            SELECT *
+            FROM `{self.tracker_table_id('run_control')}`
+            WHERE control_key = 'singleton'
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """
         )
         if not rows:
             row = {
@@ -214,10 +232,12 @@ class TrackerStore:
                 "lock_until": None,
                 "updated_at": _iso(_utcnow()),
             }
-            errors = self.client.insert_rows_json(self.tracker_table_id("run_control"), [row])
-            if errors:
-                raise RuntimeError(f"Failed to initialize tracker control row: {errors}")
-            return row
+            self._append_rows(
+                table_id=self.tracker_table_id("run_control"),
+                schema=self._CONTROL_SCHEMA,
+                rows=[row],
+            )
+            return self._normalize_control_row(row)
         return self._normalize_control_row(dict(rows[0].items()))
 
     def _normalize_control_row(self, row: dict[str, Any]) -> dict[str, Any]:
@@ -228,50 +248,39 @@ class TrackerStore:
 
     def get_control(self) -> dict[str, Any]:
         rows = self._query(
-            f"SELECT * FROM `{self.tracker_table_id('run_control')}` WHERE control_key = 'singleton' LIMIT 1"
+            f"""
+            SELECT *
+            FROM `{self.tracker_table_id('run_control')}`
+            WHERE control_key = 'singleton'
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """
         )
         if not rows:
             raise RuntimeError("Tracker control row is missing.")
         return self._normalize_control_row(dict(rows[0].items()))
 
     def update_control(self, updates: dict[str, Any]) -> dict[str, Any]:
-        assignments: list[str] = []
-        params: list[bigquery.ScalarQueryParameter] = []
-        type_map = {
-            "crawl_interval_hours": "INT64",
-            "tracking_window_days": "INT64",
-            "comment_limit": "INT64",
-            "author_bootstrap_days": "INT64",
-            "max_videos_per_cycle": "INT64",
-            "paused_until": "STRING",
-            "pause_reason": "STRING",
-            "consecutive_risk_hits": "INT64",
-            "last_risk_at": "STRING",
-            "lock_owner": "STRING",
-            "lock_until": "STRING",
+        current = self.get_control()
+        next_row = {
+            "control_key": "singleton",
+            "crawl_interval_hours": int(updates.get("crawl_interval_hours", current.get("crawl_interval_hours") or 0)),
+            "tracking_window_days": int(updates.get("tracking_window_days", current.get("tracking_window_days") or 0)),
+            "comment_limit": int(updates.get("comment_limit", current.get("comment_limit") or 0)),
+            "author_bootstrap_days": int(updates.get("author_bootstrap_days", current.get("author_bootstrap_days") or 0)),
+            "max_videos_per_cycle": int(updates.get("max_videos_per_cycle", current.get("max_videos_per_cycle") or 0)),
+            "paused_until": _iso(updates["paused_until"]) if "paused_until" in updates else _iso(current.get("paused_until")),
+            "pause_reason": str(updates.get("pause_reason", current.get("pause_reason") or "")),
+            "consecutive_risk_hits": int(updates.get("consecutive_risk_hits", current.get("consecutive_risk_hits") or 0)),
+            "last_risk_at": _iso(updates["last_risk_at"]) if "last_risk_at" in updates else _iso(current.get("last_risk_at")),
+            "lock_owner": str(updates.get("lock_owner", current.get("lock_owner") or "")),
+            "lock_until": _iso(updates["lock_until"]) if "lock_until" in updates else _iso(current.get("lock_until")),
+            "updated_at": _iso(_utcnow()),
         }
-        for key, value in updates.items():
-            if key not in type_map:
-                continue
-            param_name = f"p_{key}"
-            assignments.append(f"{key} = @{param_name}")
-            params.append(
-                bigquery.ScalarQueryParameter(
-                    param_name,
-                    type_map[key],
-                    _iso(value) if isinstance(value, datetime) else value,
-                )
-            )
-        assignments.append("updated_at = @updated_at")
-        params.append(bigquery.ScalarQueryParameter("updated_at", "STRING", _iso(_utcnow())))
-        params.append(bigquery.ScalarQueryParameter("control_key", "STRING", "singleton"))
-        self._query(
-            f"""
-            UPDATE `{self.tracker_table_id('run_control')}`
-            SET {", ".join(assignments)}
-            WHERE control_key = @control_key
-            """,
-            params,
+        self._append_rows(
+            table_id=self.tracker_table_id("run_control"),
+            schema=self._CONTROL_SCHEMA,
+            rows=[next_row],
         )
         return self.get_control()
 
@@ -321,10 +330,11 @@ class TrackerStore:
             }
             for owner_mid in normalized
         ]
-        if rows:
-            errors = self.client.insert_rows_json(self.tracker_table_id("author_sources"), rows)
-            if errors:
-                raise RuntimeError(f"Failed to save author sources: {errors}")
+        self._append_rows(
+            table_id=self.tracker_table_id("author_sources"),
+            schema=self._AUTHOR_SCHEMA,
+            rows=rows,
+        )
         return len(normalized)
 
     def list_author_sources(self) -> list[dict[str, Any]]:
@@ -589,9 +599,11 @@ class TrackerStore:
             "message": message[:1024],
             "details_json": _json_dumps(details or {}),
         }
-        errors = self.client.insert_rows_json(self.tracker_table_id("run_logs"), [row])
-        if errors:
-            raise RuntimeError(f"Failed to write tracker run log: {errors}")
+        self._append_rows(
+            table_id=self.tracker_table_id("run_logs"),
+            schema=self._RUN_LOG_SCHEMA,
+            rows=[row],
+        )
 
     def list_recent_run_logs(self, limit: int = 20) -> list[dict[str, Any]]:
         rows = self._query(

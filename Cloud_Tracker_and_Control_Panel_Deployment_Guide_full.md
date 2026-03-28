@@ -327,6 +327,9 @@ $CLOUD_RUN_URL
 # Service [bilibili-cloud-tracker] revision [bilibili-cloud-tracker-00001-fx8] has been deployed and is serving 100 percent of traffic.
 # Service URL: https://bilibili-cloud-tracker-821794372172.us-central1.run.app
 # Service URL: https://bilibili-cloud-tracker-821794372172.us-central1.run.app
+
+#Service URL: https://bilibili-cloud-tracker-821794372172.asia-east1.run.app
+#Cloud Run URL: https://bilibili-cloud-tracker-22vlpxc6va-de.a.run.app
 ```
 
 ---
@@ -1212,3 +1215,462 @@ DELETE FROM `...author_sources`
 BigQuery 要求 `DELETE` 必须带 `WHERE`，所以修复后需要重新构建镜像并重新部署，线上服务才会真正生效。
 
 另外，上传接口也建议保留对 CSV 解析异常的 `400` 返回，这样以后如果文件缺少 `owner_mid` 列，就不会再表现成难以定位的 HTML `500`。
+
+# 终局：停止与删除一切实例
+
+当你决定**完全停止云端版本**、回归本地手动爬取时，建议按下面顺序清理资源。这样可以避免：
+
+- `Cloud Scheduler` 继续定时触发，产生新的请求与日志
+- `Cloud Run` 继续保留可访问入口
+- `Cloudflare Workers` 控制台仍然对公网开放
+- 旧的 Secret、Bucket、BigQuery Dataset 长期残留，持续占用配额或计费
+
+下面步骤默认你已经在 PowerShell 中定义过这些变量；如果没有，请先补上：
+
+```powershell
+$PROJECT_ID = "your-gcp-project-id"
+$REGION = "asia-east1"
+$RUN_SERVICE = "bilibili-cloud-tracker"
+$SCHEDULER_LOCATION = "asia-east1"
+$SCHEDULER_JOB = "bilibili-cloud-tracker-2h"
+$TRACKER_ADMIN_TOKEN = "your-current-admin-token"
+$TRACKER_ADMIN_SECRET_NAME = "tracker-admin-token"
+$SESSDATA_SECRET_NAME = "bili-sessdata"
+$BILI_JCT_SECRET_NAME = "bili-jct"
+$BUVID3_SECRET_NAME = "bili-buvid3"
+$BQ_DATASET = "bili_video_data_crawler_asia"
+$GCS_BUCKET = "your-bucket-name"
+```
+
+同时获取当前 Cloud Run URL：
+
+```powershell
+$CLOUD_RUN_URL = gcloud run services describe $RUN_SERVICE --region $REGION --format="value(status.url)"
+$CLOUD_RUN_URL
+```
+
+---
+
+## A. 推荐的清理顺序总览
+
+建议顺序如下：
+
+1. 暂停 `Cloud Scheduler`
+2. 把 `Cloud Tracker` 置为暂停状态
+3. 验证不再有新任务运行
+4. 导出并备份你还需要的 CSV / 日志 / 数据
+5. 删除 `Cloudflare Workers` 控制台
+6. 删除 `Cloud Run` 服务
+7. 视情况删除 `Secret Manager`、`GCS Bucket`、`BigQuery Dataset`
+
+这样最稳妥，不会出现“控制台刚删了，后台还在跑”的情况。
+
+---
+
+## B. 第一步：先暂停 Cloud Scheduler
+
+这是最重要的一步。只要 Scheduler 不再触发，系统就不会继续自动跑新的追踪任务。
+
+### 1. 查看当前 Scheduler
+
+```powershell
+gcloud scheduler jobs describe $SCHEDULER_JOB --location $SCHEDULER_LOCATION
+```
+
+### 2. 暂停 Scheduler
+
+```powershell
+gcloud scheduler jobs pause $SCHEDULER_JOB --location $SCHEDULER_LOCATION
+```
+
+### 3. 再次确认已经暂停
+
+```powershell
+gcloud scheduler jobs describe $SCHEDULER_JOB --location $SCHEDULER_LOCATION
+```
+
+你应该看到 `state: PAUSED` 或同类信息。
+
+---
+
+## C. 第二步：把 Cloud Tracker 主动置为暂停状态
+
+即使 Scheduler 已暂停，最好仍然把 Tracker 的运行状态写成 pause，避免你手动点了控制台按钮或有人误触发 `/run`。
+
+### 1. 手动写入一个很远的 `paused_until`
+
+```powershell
+$PauseBody = '{"paused_until":"2099-12-31T23:59:59+00:00","pause_reason":"manual shutdown before cloud cleanup"}'
+
+Invoke-WebRequest `
+  -Method POST `
+  -Uri "$CLOUD_RUN_URL/admin/config/update" `
+  -Headers @{
+    Authorization = "Bearer $TRACKER_ADMIN_TOKEN"
+    "Content-Type" = "application/json"
+  } `
+  -Body $PauseBody `
+  -UseBasicParsing
+```
+
+### 2. 检查当前状态
+
+```powershell
+(Invoke-WebRequest `
+  -Uri "$CLOUD_RUN_URL/admin/status" `
+  -Headers @{ Authorization = "Bearer $TRACKER_ADMIN_TOKEN" } `
+  -UseBasicParsing).Content
+```
+
+重点确认：
+
+- `paused_until` 已经是很远的未来时间
+- `pause_reason` 已更新
+
+---
+
+## D. 第三步：确认系统已经不再执行新任务
+
+### 1. 查看最近 Cloud Run 日志
+
+```powershell
+gcloud run services logs read $RUN_SERVICE --region $REGION --limit 50
+```
+
+### 2. 如果你想再确认一次手动触发也不会继续跑
+
+```powershell
+(Invoke-WebRequest `
+  -Method POST `
+  -Uri "$CLOUD_RUN_URL/run" `
+  -Headers @{ Authorization = "Bearer $TRACKER_ADMIN_TOKEN" } `
+  -UseBasicParsing).Content
+```
+
+理想情况下应返回：
+
+- `status = paused`
+  或
+- `status = skipped`
+
+总之不应该再继续执行真实抓取。
+
+---
+
+## E. 第四步：备份你还需要保留的数据
+
+如果你准备回到本地手动爬取，建议至少把下面这些东西导出留档。
+
+### 1. 备份作者清单
+
+```powershell
+Invoke-WebRequest `
+  -Uri "$CLOUD_RUN_URL/admin/authors?format=csv" `
+  -Headers @{ Authorization = "Bearer $TRACKER_ADMIN_TOKEN" } `
+  -OutFile ".\tracker_authors_backup.csv" `
+  -UseBasicParsing
+```
+
+### 2. 备份当前追踪清单
+
+```powershell
+Invoke-WebRequest `
+  -Uri "$CLOUD_RUN_URL/admin/watchlist?format=csv&only_active=true" `
+  -Headers @{ Authorization = "Bearer $TRACKER_ADMIN_TOKEN" } `
+  -OutFile ".\tracker_watchlist_backup.csv" `
+  -UseBasicParsing
+```
+
+### 3. 备份待抓元数据 / 媒体队列
+
+```powershell
+Invoke-WebRequest `
+  -Uri "$CLOUD_RUN_URL/admin/export/meta-media-queue" `
+  -Headers @{ Authorization = "Bearer $TRACKER_ADMIN_TOKEN" } `
+  -OutFile ".\tracker_meta_media_queue_backup.csv" `
+  -UseBasicParsing
+```
+
+### 4. 可选：导出近期 run logs
+
+```powershell
+(Invoke-WebRequest `
+  -Uri "$CLOUD_RUN_URL/admin/run-logs?limit=50" `
+  -Headers @{ Authorization = "Bearer $TRACKER_ADMIN_TOKEN" } `
+  -UseBasicParsing).Content | Out-File ".\tracker_run_logs_backup.json" -Encoding utf8
+```
+
+---
+
+## F. 第五步：删除 Cloudflare Workers 控制台
+
+如果你不再需要公网控制台，建议先把 Worker 删掉，避免公网入口继续存在。
+
+### 1. 进入 Worker 项目目录
+
+```powershell
+cd "d:\Schoolworks\Thesis\bilibili-data\cloud_panel"
+```
+
+### 2. 查看当前 Worker 名称
+
+看 `wrangler.toml`，通常是：
+
+```toml
+name = "bilibili-cloud-panel"
+```
+
+### 3. 删除 Worker
+
+```powershell
+npx wrangler delete
+```
+
+Wrangler 会提示你确认删除。
+
+如果你有多个环境，也可以显式指定：
+
+```powershell
+npx wrangler delete --name bilibili-cloud-panel
+```
+
+### 4. 如果你还配置了 Cloudflare Access
+
+Worker 删除后，Cloudflare Access 那个应用也建议去 Dashboard 手动删掉：
+
+- Cloudflare Dashboard
+- Zero Trust
+- Access
+- Applications
+- 删除对应的 `Bilibili Cloud Control Panel`
+
+这是为了避免遗留无效策略和域名规则。
+
+---
+
+## G. 第六步：删除 Cloud Scheduler
+
+当你已经确认不需要任何自动触发后，可以直接删除 Scheduler Job。
+
+```powershell
+gcloud scheduler jobs delete $SCHEDULER_JOB --location $SCHEDULER_LOCATION
+```
+
+如果系统提示确认，输入 `y`。
+
+删除后可以再确认：
+
+```powershell
+gcloud scheduler jobs list --location $SCHEDULER_LOCATION
+```
+
+---
+
+## H. 第七步：删除 Cloud Run 服务
+
+当你确认不再需要云端追踪后，可以删除 `Cloud Run` 服务本身。
+
+```powershell
+gcloud run services delete $RUN_SERVICE --region $REGION
+```
+
+删除后再检查：
+
+```powershell
+gcloud run services list --region $REGION
+```
+
+确保列表里已经没有 `$RUN_SERVICE`。
+
+---
+
+## I. 第八步：删除 Secret Manager 里的相关 secret
+
+如果你不再需要这套云端系统，建议把这些 secret 一并删除，避免敏感信息长期保留。
+
+### 1. 查看现有 secrets
+
+```powershell
+gcloud secrets list
+```
+
+### 2. 删除 Tracker Admin Token
+
+```powershell
+gcloud secrets delete $TRACKER_ADMIN_SECRET_NAME
+```
+
+### 3. 删除 Bilibili Cookie Secrets
+
+```powershell
+gcloud secrets delete $SESSDATA_SECRET_NAME
+gcloud secrets delete $BILI_JCT_SECRET_NAME
+gcloud secrets delete $BUVID3_SECRET_NAME
+```
+
+如果你担心误删，可以先只删除 `version`，但对这个项目来说，既然你已经决定完全停用云端，通常直接删 secret 更干净。
+
+---
+
+## J. 第九步：按需删除 GCS Bucket
+
+只有在你确认**不再需要云端媒体文件**时，才执行这一步。
+
+### 1. 先看看 bucket 里是不是还有你想留的文件
+
+```powershell
+gcloud storage ls "gs://$GCS_BUCKET"
+```
+
+### 2. 如果你不再需要，先删掉 bucket 内所有对象
+
+```powershell
+gcloud storage rm --recursive "gs://$GCS_BUCKET"
+```
+
+### 3. 再删除 bucket 本身
+
+```powershell
+gcloud storage buckets delete "gs://$GCS_BUCKET"
+```
+
+### 4. 再确认 bucket 已消失
+
+```powershell
+gcloud storage buckets list
+```
+
+---
+
+## K. 第十步：按需删除 BigQuery Dataset
+
+只有在你确认**不再需要任何历史快照、评论切片、控制表和运行日志**时，才执行这一步。
+
+### 1. 先看看当前 dataset
+
+```powershell
+bq ls
+```
+
+### 2. 如需彻底删除整个 dataset
+
+```powershell
+bq rm -r -f "$PROJECT_ID`:$BQ_DATASET"
+```
+
+说明：
+
+- `-r` 表示递归删除整个 dataset 下的所有表
+- `-f` 表示不再二次确认
+
+如果你还想保留历史数据用于论文分析，就**不要删 BigQuery Dataset**。
+
+---
+
+## L. 第十一步：可选删除 Service Account
+
+如果这个 Service Account 是专门为了这套云端系统创建的，并且你以后也不打算继续复用它，可以删除。
+
+例如你之前创建过：
+
+```powershell
+$SERVICE_ACCOUNT_EMAIL = "bili-tracker-sa@$PROJECT_ID.iam.gserviceaccount.com"
+```
+
+删除命令：
+
+```powershell
+gcloud iam service-accounts delete $SERVICE_ACCOUNT_EMAIL
+```
+
+如果你还给 Cloudflare Worker 单独创建过一个 Service Account，也同理删除。
+
+---
+
+## M. 最小停机版 vs 完全清空版
+
+如果你只是想**防止继续计费**，而不是彻底抹掉所有痕迹，最小停机版只需要做：
+
+1. `pause` Cloud Scheduler
+2. `pause` Cloud Tracker
+3. 删除 Cloudflare Worker
+4. 删除 Cloud Run
+
+这四步做完，基本就不会再继续产生新的运行费用。
+
+如果你要**彻底清空一切云端资源**，再继续做：
+
+5. 删除 Secret Manager secrets
+6. 删除 GCS bucket
+7. 删除 BigQuery dataset
+8. 删除 Service Account
+
+---
+
+## N. 一组可以直接执行的“完全下线”命令
+
+下面是一组偏激进的**完整下线版**命令，请先确认你已经备份了需要的数据。
+
+```powershell
+cd "d:\Schoolworks\Thesis\bilibili-data"
+
+$PROJECT_ID = "your-gcp-project-id"
+$REGION = "asia-east1"
+$RUN_SERVICE = "bilibili-cloud-tracker"
+$SCHEDULER_LOCATION = "asia-east1"
+$SCHEDULER_JOB = "bilibili-cloud-tracker-2h"
+$TRACKER_ADMIN_TOKEN = "your-current-admin-token"
+$TRACKER_ADMIN_SECRET_NAME = "tracker-admin-token"
+$SESSDATA_SECRET_NAME = "bili-sessdata"
+$BILI_JCT_SECRET_NAME = "bili-jct"
+$BUVID3_SECRET_NAME = "bili-buvid3"
+$BQ_DATASET = "bili_video_data_crawler_asia"
+$GCS_BUCKET = "your-bucket-name"
+$SERVICE_ACCOUNT_EMAIL = "bili-tracker-sa@$PROJECT_ID.iam.gserviceaccount.com"
+
+$CLOUD_RUN_URL = gcloud run services describe $RUN_SERVICE --region $REGION --format="value(status.url)"
+
+gcloud scheduler jobs pause $SCHEDULER_JOB --location $SCHEDULER_LOCATION
+
+$PauseBody = '{"paused_until":"2099-12-31T23:59:59+00:00","pause_reason":"manual shutdown before cloud cleanup"}'
+Invoke-WebRequest `
+  -Method POST `
+  -Uri "$CLOUD_RUN_URL/admin/config/update" `
+  -Headers @{
+    Authorization = "Bearer $TRACKER_ADMIN_TOKEN"
+    "Content-Type" = "application/json"
+  } `
+  -Body $PauseBody `
+  -UseBasicParsing
+
+gcloud scheduler jobs delete $SCHEDULER_JOB --location $SCHEDULER_LOCATION
+gcloud run services delete $RUN_SERVICE --region $REGION
+
+gcloud secrets delete $TRACKER_ADMIN_SECRET_NAME
+gcloud secrets delete $SESSDATA_SECRET_NAME
+gcloud secrets delete $BILI_JCT_SECRET_NAME
+gcloud secrets delete $BUVID3_SECRET_NAME
+
+gcloud storage rm --recursive "gs://$GCS_BUCKET"
+gcloud storage buckets delete "gs://$GCS_BUCKET"
+
+bq rm -r -f "$PROJECT_ID`:$BQ_DATASET"
+
+gcloud iam service-accounts delete $SERVICE_ACCOUNT_EMAIL
+```
+
+---
+
+## O. 最后建议
+
+如果你只是暂时放弃云端方案，而不是永久不用，建议你选择：
+
+- 只 `pause` Scheduler
+- 只 `pause` Tracker
+- 导出作者清单 / watchlist / queue
+- 保留 BigQuery 和 GCS
+- 先不删 Service Account 和 Secret
+
+因为这样以后如果你想重新试云端方案，恢复成本最低。
+
+如果你已经明确决定**以后完全只用本地手动爬取**，再做“完全清空版”会更干净。  
