@@ -92,6 +92,10 @@ class BvpBuilderUidExpansionTest(unittest.TestCase):
         def code(self, text: str, language=None) -> None:  # noqa: ANN001, ARG002
             self.rendered = text
 
+    class _BrokenPlaceholder:
+        def code(self, *_args, **_kwargs) -> None:
+            raise RuntimeError("socket closed")
+
     def test_load_owner_history_task_starts_excludes_current_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root_dir = Path(tmp_dir)
@@ -280,6 +284,22 @@ class BvpBuilderUidExpansionTest(unittest.TestCase):
             self.assertIn("[INFO]: first line", saved_text)
             self.assertIn("[TIMESTAMP][END] ", saved_text)
             self.assertIn("[TIMESTAMP][BEGIN] ", placeholder.rendered)
+
+    def test_append_log_ignores_placeholder_failures_and_mirrors_to_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            logs: list[str] = []
+            mirror_path = Path(tmp_dir) / "running.log"
+
+            bvp_builder._append_log(
+                logs,
+                self._BrokenPlaceholder(),
+                "[INFO]: keep running",
+                mirror_path=mirror_path,
+            )
+
+            self.assertTrue(logs)
+            self.assertTrue(mirror_path.exists())
+            self.assertIn("[INFO]: keep running", mirror_path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

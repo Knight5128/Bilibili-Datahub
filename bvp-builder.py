@@ -977,11 +977,24 @@ def _build_result_from_owner_mids_with_guardrails(
     )
 
 
-def _append_log(logs: list[str], placeholder, message: str) -> None:
+def _persist_live_log_snapshot(logs: list[str], mirror_path: Path | None) -> None:
+    if mirror_path is None or not logs:
+        return
+    mirror_path.parent.mkdir(parents=True, exist_ok=True)
+    mirror_path.write_text("\n".join(logs).strip() + "\n", encoding="utf-8")
+
+
+def _append_log(logs: list[str], placeholder, message: str, *, mirror_path: Path | None = None) -> None:
     if not logs:
         logs.append(build_timestamp_marker("BEGIN", datetime.now()))
     logs.append(message)
-    placeholder.code("\n".join(logs), language=None)
+    _persist_live_log_snapshot(logs, mirror_path)
+    try:
+        placeholder.code("\n".join(logs), language=None)
+    except Exception:
+        # Streamlit may lose its websocket during long-running crawls. Keep the
+        # task alive so logs can still be archived in finally blocks.
+        return
 
 
 def _save_task_logs(task_name: str, logs: list[str], *, log_dir: Path | None = None) -> Path | None:
@@ -1403,9 +1416,10 @@ with tab_custom_export:
 
         if st.button("开始导出作者一段时间内上传视频列表", key="custom_owner_submit"):
             owner_logs: list[str] = []
+            live_log_path: Path | None = None
 
             def _owner_log(message: str) -> None:
-                _append_log(owner_logs, owner_log_placeholder, message)
+                _append_log(owner_logs, owner_log_placeholder, message, mirror_path=live_log_path)
 
             if not owner_files:
                 st.warning("请先上传至少一个 CSV/XLSX 文件。")
@@ -1443,6 +1457,8 @@ with tab_custom_export:
                             task_started_at,
                             logger=_owner_log,
                         )
+                        live_log_path = session.logs_dir / f"uid_expansion_part_{session.part_number}_running.log"
+                        _persist_live_log_snapshot(owner_logs, live_log_path)
                         owner_since_overrides, reused_owner_count = _build_owner_since_overrides(
                             owner_mids,
                             output_root,
@@ -1558,6 +1574,8 @@ with tab_custom_export:
                                 owner_logs,
                                 log_dir=session.logs_dir,
                             )
+                            if live_log_path is not None:
+                                live_log_path.unlink(missing_ok=True)
                             _show_saved_log_path(log_path)
                             if outcome is not None and saved is not None:
                                 state = _record_uid_expansion_part(

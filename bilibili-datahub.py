@@ -62,6 +62,7 @@ from bili_pipeline.datahub.shared import (
     append_live_log,
     build_credential_from_cookie,
     load_json_config,
+    persist_live_log_snapshot,
     render_centered_header,
     save_json_config,
     save_timestamped_task_log,
@@ -422,9 +423,21 @@ with tab_discover:
         owner_log_placeholder = st.empty()
         if st.button("开始导出作者一段时间内上传视频列表"):
             owner_logs: list[str] = []
+            live_log_path: Path | None = None
+            session = None
+            requested_start_at = None
+            requested_end_at = None
+            owner_since_overrides = None
+            reused_owner_count = 0
+            owner_mids: list[int] = []
+            task_started_at = None
+            outcome = None
+            saved = None
+            remaining_saved = None
+            summary_saved = None
 
             def _owner_log(message: str) -> None:
-                append_live_log(owner_logs, owner_log_placeholder, message)
+                append_live_log(owner_logs, owner_log_placeholder, message, mirror_path=live_log_path)
 
             try:
                 if not owner_files:
@@ -449,6 +462,8 @@ with tab_discover:
                     task_started_at,
                     logger=_owner_log,
                 )
+                live_log_path = session.logs_dir / f"uid_expansion_part_{session.part_number}_running.log"
+                persist_live_log_snapshot(owner_logs, live_log_path)
                 owner_since_overrides, reused_owner_count = build_owner_since_overrides(
                     owner_mids,
                     output_root,
@@ -472,25 +487,8 @@ with tab_discover:
                 remaining_saved = None
                 if outcome.remaining_owner_mids:
                     remaining_saved = save_owner_mid_csv(outcome.remaining_owner_mids, session.session_dir / f"remaining_uids_part_{session.part_number}.csv")
-                log_path = save_timestamped_task_log(f"uid_expansion_part_{session.part_number}", owner_logs, log_dir=session.logs_dir)
-                state = record_uid_expansion_part(
-                    session,
-                    requested_start_at,
-                    requested_end_at,
-                    owner_since_overrides,
-                    reused_owner_count,
-                    len(owner_mids),
-                    outcome,
-                    saved,
-                    remaining_saved,
-                    log_path,
-                    task_started_at.isoformat(timespec="seconds"),
-                    datetime.now().isoformat(timespec="seconds"),
-                )
-                summary_saved = None
-                if not outcome.remaining_owner_mids:
-                    summary_saved = write_uid_expansion_summary(session.session_dir, state)
             except Exception as exc:  # noqa: BLE001
+                _owner_log(f"[ERROR]: 作者批量抓取任务失败：{summarize_exception(exc)}")
                 st.error(f"作者视频扩展失败：{exc}")
             else:
                 st.success(f"已导出：{saved}")
@@ -499,6 +497,31 @@ with tab_discover:
                 if summary_saved is not None:
                     st.caption(f"任务总结：`{display_path(summary_saved, APP_DIR)}`")
                 st.dataframe(pd.DataFrame(discover_entries_to_rows(outcome.result.entries)).head(200), width="stretch", hide_index=True)
+            finally:
+                if session is not None:
+                    log_path = save_timestamped_task_log(f"uid_expansion_part_{session.part_number}", owner_logs, log_dir=session.logs_dir)
+                    if live_log_path is not None:
+                        live_log_path.unlink(missing_ok=True)
+                    if log_path is not None:
+                        st.caption(f"运行日志：`{display_path(log_path, APP_DIR)}`")
+                    if log_path is not None and saved is not None and outcome is not None and requested_start_at is not None and requested_end_at is not None and owner_since_overrides is not None and task_started_at is not None:
+                        state = record_uid_expansion_part(
+                            session,
+                            requested_start_at,
+                            requested_end_at,
+                            owner_since_overrides,
+                            reused_owner_count,
+                            len(owner_mids),
+                            outcome,
+                            saved,
+                            remaining_saved,
+                            log_path,
+                            task_started_at.isoformat(timespec="seconds"),
+                            datetime.now().isoformat(timespec="seconds"),
+                        )
+                        if not outcome.remaining_owner_mids:
+                            summary_saved = write_uid_expansion_summary(session.session_dir, state)
+                            st.caption(f"任务总结：`{display_path(summary_saved, APP_DIR)}`")
 
     with bvid_lookup_tab:
         bvid_files = st.file_uploader("上传保存 BVID 的 CSV/XLSX 文件（可多选）", type=["csv", "xlsx", "xls"], accept_multiple_files=True)

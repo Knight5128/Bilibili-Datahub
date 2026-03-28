@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from bilibili_api import Credential
+from bili_pipeline.utils.log_files import build_timestamp_marker
 
 
 def build_logo_data_uri(logo_path: Path) -> str | None:
@@ -104,9 +105,28 @@ def display_path(path: Path, base_dir: Path | None = None) -> str:
     return path.as_posix()
 
 
-def append_live_log(logs: list[str], placeholder, message: str) -> None:
+def _persist_live_log_snapshot(logs: list[str], mirror_path: Path | None) -> None:
+    if mirror_path is None or not logs:
+        return
+    mirror_path.parent.mkdir(parents=True, exist_ok=True)
+    mirror_path.write_text("\n".join(logs).strip() + "\n", encoding="utf-8")
+
+
+def append_live_log(logs: list[str], placeholder, message: str, *, mirror_path: Path | None = None) -> None:
+    if not logs:
+        logs.append(build_timestamp_marker("BEGIN", datetime.now()))
     logs.append(message)
-    placeholder.code("\n".join(logs), language=None)
+    _persist_live_log_snapshot(logs, mirror_path)
+    try:
+        placeholder.code("\n".join(logs), language=None)
+    except Exception:
+        # Streamlit frontend may disconnect during long-running tasks; keep the
+        # crawl alive and continue mirroring logs to memory / disk.
+        return
+
+
+def persist_live_log_snapshot(logs: list[str], mirror_path: Path | None) -> None:
+    _persist_live_log_snapshot(logs, mirror_path)
 
 
 def save_timestamped_task_log(task_name: str, logs: list[str], *, log_dir: Path) -> Path | None:
@@ -116,5 +136,10 @@ def save_timestamped_task_log(task_name: str, logs: list[str], *, log_dir: Path)
     safe_task_name = re.sub(r"[^A-Za-z0-9._-]+", "_", task_name).strip("_") or "task"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     log_path = log_dir / f"{timestamp}_{safe_task_name}.log"
-    log_path.write_text("\n".join(logs).strip() + "\n", encoding="utf-8")
+    finalized_logs = list(logs)
+    if not finalized_logs[0].startswith("[TIMESTAMP][BEGIN]"):
+        finalized_logs.insert(0, build_timestamp_marker("BEGIN", datetime.now()))
+    if not finalized_logs[-1].startswith("[TIMESTAMP][END]"):
+        finalized_logs.append(build_timestamp_marker("END", datetime.now()))
+    log_path.write_text("\n".join(finalized_logs).strip() + "\n", encoding="utf-8")
     return log_path
