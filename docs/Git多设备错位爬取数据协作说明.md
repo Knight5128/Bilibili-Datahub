@@ -87,13 +87,236 @@ git config --global --get user.email
 
 如果你通过 HTTPS 拉取私有仓库，首次 `git clone` / `git push` 时还需要完成 GitHub 认证。建议直接使用系统凭据管理器或 GitHub Personal Access Token，不要把 Token 写入仓库文件。
 
+### 2.1 使用 GitHub Personal Access Token（PAT）进行本地认证
+
+如果新设备没有配置 SSH 公钥，或者出现 `Permission denied (publickey)`，建议直接改用 **HTTPS + PAT** 方式访问 GitHub 私有仓库。
+
+#### 第一步：在 GitHub 创建 PAT
+
+在 GitHub 网页中进入：
+
+- `Settings`
+- `Developer settings`
+- `Personal access tokens`
+- `Tokens (classic)` 或 `Fine-grained tokens`
+
+建议：
+
+- 如果你只需要访问自己的私有仓库，可以优先使用 `Fine-grained token`
+- 如果你想减少兼容性问题，也可以使用 `Tokens (classic)`
+
+至少保证该 Token 具备对应仓库的读写权限。对于常见协作场景，至少要能：
+
+- clone
+- pull
+- push
+
+创建完成后，**立即复制并保存该 Token**；离开页面后通常无法再次完整查看。
+
+#### 第二步：优先使用 HTTPS 仓库地址
+
+不要使用下面这种 SSH 地址：
+
+```powershell
+git@github.com:<owner>/<repo>.git
+```
+
+建议使用 HTTPS 地址：
+
+```powershell
+https://github.com/<owner>/<repo>.git
+```
+
+#### 第三步：在本机启用 Git Credential Manager
+
+Windows 下通常可以直接让 Git 使用系统凭据管理器保存 PAT：
+
+```powershell
+git config --global credential.helper manager-core
+```
+
+检查是否已生效：
+
+```powershell
+git config --global --get credential.helper
+```
+
+#### 第四步：首次 clone / pull / push 时输入 GitHub 用户名和 PAT
+
+例如：
+
+```powershell
+git clone https://github.com/<owner>/<repo>.git
+```
+
+首次认证时：
+
+- `Username` 输入你的 GitHub 用户名
+- `Password` 位置不要填 GitHub 登录密码，而是填写刚刚创建的 `PAT`
+
+如果 `manager-core` 已启用，Windows 会自动把这组凭据保存在系统凭据管理器中，后续通常不需要重复输入。
+
+#### 第五步：如果之前误用了 SSH 地址，可切换远程地址
+
+如果仓库已经克隆到本地，但远程地址还是 SSH，可以在仓库目录下改成 HTTPS：
+
+```powershell
+git remote -v
+git remote set-url origin https://github.com/<owner>/<repo>.git
+git remote -v
+```
+
+#### 第六步：如需清除旧的错误凭据
+
+如果你之前输错过密码或 Token，导致后续一直认证失败，可以先在 Windows“凭据管理器”中删除旧的 GitHub 凭据，然后重新执行一次 `git pull` 或 `git push` 触发重新登录。
+
+### 2.2 使用 GitHub SSH 密钥进行本地认证
+
+如果你希望通过 SSH 方式访问 GitHub，例如使用：
+
+```powershell
+git@github.com:<owner>/<repo>.git
+```
+
+那么新设备需要先完成本地 SSH 密钥配置，并把公钥添加到 GitHub 账号。
+
+#### 第一步：检查本机是否已有 SSH 密钥
+
+先查看当前用户目录下是否已经存在 SSH 密钥：
+
+```powershell
+Get-ChildItem "$HOME\.ssh"
+```
+
+常见文件包括：
+
+- `id_ed25519`
+- `id_ed25519.pub`
+- `id_rsa`
+- `id_rsa.pub`
+
+如果已经有一套你确认可用的 GitHub SSH 密钥，可以直接复用；如果没有，建议新建一套 `ed25519` 密钥。
+
+#### 第二步：生成新的 SSH 密钥
+
+推荐使用 GitHub 邮箱作为注释：
+
+```powershell
+ssh-keygen -t ed25519 -C "你的GitHub邮箱"
+```
+
+执行后：
+
+- 直接回车可使用默认路径 `C:\Users\你的用户名\.ssh\id_ed25519`
+- 可以按需为私钥设置 passphrase
+- 如果这是个人长期使用设备，建议设置 passphrase 并妥善保管
+
+#### 第三步：启动并启用 `ssh-agent`
+
+Windows 上建议先确保 `ssh-agent` 服务可用：
+
+```powershell
+Get-Service ssh-agent
+Set-Service -Name ssh-agent -StartupType Manual
+Start-Service ssh-agent
+```
+
+然后把新生成的私钥加入 agent：
+
+```powershell
+ssh-add "$HOME\.ssh\id_ed25519"
+```
+
+如果你使用的是其他密钥文件名，请把路径替换成对应文件。
+
+#### 第四步：复制公钥内容
+
+把公钥打印出来：
+
+```powershell
+Get-Content "$HOME\.ssh\id_ed25519.pub"
+```
+
+或者直接复制到剪贴板：
+
+```powershell
+Get-Content "$HOME\.ssh\id_ed25519.pub" | Set-Clipboard
+```
+
+#### 第五步：将公钥添加到 GitHub
+
+在 GitHub 网页中进入：
+
+- `Settings`
+- `SSH and GPG keys`
+- `New SSH key`
+
+然后：
+
+- `Title` 填写这台设备的名字，例如 `Surface-Laptop-2026`
+- `Key type` 选择 `Authentication Key`
+- `Key` 粘贴刚刚复制的公钥内容
+
+保存后，这台设备就获得了通过 SSH 访问 GitHub 的能力。
+
+#### 第六步：测试 SSH 连接
+
+执行：
+
+```powershell
+ssh -T git@github.com
+```
+
+第一次连接时，通常会提示是否信任 GitHub 主机指纹，输入：
+
+```text
+yes
+```
+
+如果配置成功，通常会看到类似“成功认证，但 GitHub 不提供 shell 访问”的提示，这表示 SSH 已经可以正常用于 Git 远程连接。
+
+#### 第七步：使用 SSH 地址 clone 仓库
+
+完成上面的配置后，就可以直接使用 SSH 地址：
+
+```powershell
+git clone git@github.com:<owner>/<repo>.git
+```
+
+#### 第八步：把已存在仓库的远程地址切换为 SSH
+
+如果你已经通过 HTTPS clone 了仓库，但后续想切换为 SSH，可以在仓库目录下执行：
+
+```powershell
+git remote -v
+git remote set-url origin git@github.com:<owner>/<repo>.git
+git remote -v
+```
+
+#### 第九步：如果仍然出现 `Permission denied (publickey)`
+
+请优先检查：
+
+- 当前 GitHub 账号下是否真的添加了这台设备对应的公钥
+- `ssh-add` 是否已把正确的私钥加入 agent
+- 当前仓库远程地址是否确实为 `git@github.com:...`
+- 本机是否加载了旧的、错误的 SSH key
+
+必要时可以执行：
+
+```powershell
+ssh-add -l
+```
+
+查看当前 agent 中实际加载了哪些密钥。
+
 ### 3. 将项目拉取到本地
 
 选择一个本地工作目录后执行：
 
 ```powershell
 cd "D:\Schoolworks"
-git clone <你的仓库地址>
+git clone https://github.com/<owner>/<repo>.git
 cd ".\Thesis\bilibili-data"
 ```
 
