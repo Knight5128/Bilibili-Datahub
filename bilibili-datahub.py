@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -37,6 +38,7 @@ from bili_pipeline.datahub.author_refinement import (
     AUTHOR_REFINEMENT_REFINED_FULL_FILENAME,
     AUTHOR_REFINEMENT_REFINED_SAMPLED_FILENAME,
     AUTHOR_REFINEMENTS_OUTPUT_DIR,
+    build_followup_author_refinement_session,
     build_author_distribution_figure,
     build_session_expanded_author_list,
     build_refinement_comparison_figure,
@@ -754,6 +756,18 @@ with tab_author_refinement:
                 step=1,
                 help="连续命中风控相关报错达到该次数后，本轮先暂停，并导出 remaining 作者列表用于续跑。",
             )
+            enable_refinement_sleep_resume = st.checkbox(
+                "开启风控后睡眠续跑",
+                value=False,
+                help="开启后，若某个 part 因连续风控报错暂停，程序会先睡眠一段时间，再自动进入下一个 part。",
+            )
+            refinement_sleep_minutes = st.number_input(
+                "风控后睡眠时长（分钟）",
+                min_value=1,
+                max_value=1440,
+                value=5,
+                step=1,
+            )
             refinement_random_seed = st.number_input("完成任务后默认保存的精简随机种子", min_value=0, max_value=999999, value=42, step=1)
             trigger_refinement = st.form_submit_button("开始洞察 / 续跑")
         refinement_log_placeholder = st.empty()
@@ -804,8 +818,6 @@ with tab_author_refinement:
                     logger=_refinement_log,
                 )
                 task_dir = session.session_dir
-                live_log_path = task_dir / "logs" / f"author_refinement_part_{session.part_number}_running.log"
-                persist_live_log_snapshot(refinement_logs, live_log_path)
 
                 if invalid_count:
                     _refinement_log(f"[WARN] 检测到 {invalid_count} 条无法解析的作者 ID，已在后续抓取中忽略。")
@@ -816,27 +828,73 @@ with tab_author_refinement:
                 else:
                     original_saved = task_dir / AUTHOR_REFINEMENT_ORIGINAL_AUTHORS_FILENAME
 
-                outcome = crawl_author_metadata_with_guardrails(
-                    owner_mids,
-                    credential=active_credential,
-                    logger=_refinement_log,
-                    request_pause_seconds=float(refinement_pause_seconds),
-                    consecutive_risk_limit=int(refinement_risk_limit),
-                )
-                metadata_part_saved = export_dataframe(
-                    outcome.metadata_df,
-                    task_dir / f"author_metadata_part_{session.part_number}.csv",
-                )
-                accumulated_df = build_session_expanded_author_list(task_dir)
-                accumulated_saved = export_dataframe(accumulated_df, task_dir / AUTHOR_REFINEMENT_ACCUMULATED_FILENAME)
-                _refinement_log(f"[INFO] 已保存当前累计扩充作者列表：{display_path(accumulated_saved, APP_DIR)}")
+                current_owner_mids = owner_mids
+                while True:
+                    live_log_path = task_dir / "logs" / f"author_refinement_part_{session.part_number}_running.log"
+                    persist_live_log_snapshot(refinement_logs, live_log_path)
+                    metadata_part_saved = None
+                    accumulated_saved = None
+                    remaining_saved = None
 
-                if outcome.remaining_owner_mids:
-                    remaining_saved = save_remaining_author_csv(
-                        outcome.remaining_owner_mids,
-                        task_dir / f"remaining_authors_part_{session.part_number}.csv",
+                    _refinement_log(f"[INFO] 开始执行 author_refinement part_{session.part_number}，待处理作者数 {len(current_owner_mids)}。")
+                    outcome = crawl_author_metadata_with_guardrails(
+                        current_owner_mids,
+                        credential=active_credential,
+                        logger=_refinement_log,
+                        request_pause_seconds=float(refinement_pause_seconds),
+                        consecutive_risk_limit=int(refinement_risk_limit),
                     )
-                    _refinement_log(f"[WARN] 已导出剩余待爬作者列表：{display_path(remaining_saved, APP_DIR)}")
+                    metadata_part_saved = export_dataframe(
+                        outcome.metadata_df,
+                        task_dir / f"author_metadata_part_{session.part_number}.csv",
+                    )
+                    accumulated_df = build_session_expanded_author_list(task_dir)
+                    accumulated_saved = export_dataframe(accumulated_df, task_dir / AUTHOR_REFINEMENT_ACCUMULATED_FILENAME)
+                    _refinement_log(f"[INFO] 已保存当前累计扩充作者列表：{display_path(accumulated_saved, APP_DIR)}")
+
+                    if outcome.remaining_owner_mids:
+                        remaining_saved = save_remaining_author_csv(
+                            outcome.remaining_owner_mids,
+                            task_dir / f"remaining_authors_part_{session.part_number}.csv",
+                        )
+                        _refinement_log(f"[WARN] 已导出剩余待爬作者列表：{display_path(remaining_saved, APP_DIR)}")
+
+                    part_log_path = save_timestamped_task_log(
+                        f"author_refinement_part_{session.part_number}",
+                        refinement_logs,
+                        log_dir=task_dir / "logs",
+                    )
+                    state = record_author_refinement_part(
+                        session,
+                        owner_mid_column=owner_column_name,
+                        source_name=refinement_upload.name if refinement_upload is not None else "",
+                        input_owner_count=len(current_owner_mids),
+                        outcome=outcome,
+                        metadata_part_path=metadata_part_saved,
+                        accumulated_path=accumulated_saved,
+                        remaining_path=remaining_saved,
+                        failures_path=None,
+                        log_path=part_log_path,
+                        run_started_at=task_started_at.isoformat(timespec="seconds"),
+                        run_finished_at=datetime.now().isoformat(timespec="seconds"),
+                    )
+                    summary_saved = write_author_refinement_summary(task_dir, state)
+
+                    if not outcome.remaining_owner_mids:
+                        break
+
+                    if not (enable_refinement_sleep_resume and outcome.stopped_due_to_risk):
+                        break
+
+                    sleep_seconds = int(refinement_sleep_minutes) * 60
+                    _refinement_log(
+                        f"[INFO] 当前 part 因连续风控报错达到阈值而暂停；已开启睡眠续跑，"
+                        f"将在 {int(refinement_sleep_minutes)} 分钟后自动进入下一个 part。"
+                    )
+                    time.sleep(sleep_seconds)
+                    session = build_followup_author_refinement_session(task_dir)
+                    current_owner_mids = outcome.remaining_owner_mids
+                    task_started_at = datetime.now().replace(microsecond=0)
             except Exception as exc:  # noqa: BLE001
                 _refinement_log(f"[ERROR] 作者数据洞察失败：{exc}")
                 st.error(f"作者数据洞察失败：{exc}")
@@ -845,22 +903,7 @@ with tab_author_refinement:
                     log_path = save_timestamped_task_log("author_refinement", refinement_logs, log_dir=task_dir / "logs")
                     if live_log_path is not None:
                         live_log_path.unlink(missing_ok=True)
-                    if outcome is not None and session is not None and metadata_part_saved is not None and accumulated_saved is not None:
-                        state = record_author_refinement_part(
-                            session,
-                            owner_mid_column=owner_column_name,
-                            source_name=refinement_upload.name if refinement_upload is not None else "",
-                            input_owner_count=len(owner_mids) if "owner_mids" in locals() else 0,
-                            outcome=outcome,
-                            metadata_part_path=metadata_part_saved,
-                            accumulated_path=accumulated_saved,
-                            remaining_path=remaining_saved,
-                            failures_path=None,
-                            log_path=log_path,
-                            run_started_at=task_started_at.isoformat(timespec="seconds") if "task_started_at" in locals() else datetime.now().isoformat(timespec="seconds"),
-                            run_finished_at=datetime.now().isoformat(timespec="seconds"),
-                        )
-                        summary_saved = write_author_refinement_summary(task_dir, state)
+                    if outcome is not None and state is not None:
                         st.session_state["author_refinement_result"] = {
                             "status": "completed" if state.get("completed_all") else ("paused" if outcome.stopped_due_to_risk else "partial"),
                             "task_dir": str(task_dir),
@@ -876,6 +919,8 @@ with tab_author_refinement:
                             "sample_ratio": float(refinement_ratio),
                             "random_seed": int(refinement_random_seed),
                             "last_risk_error": outcome.last_risk_error,
+                            "sleep_resume_enabled": bool(enable_refinement_sleep_resume),
+                            "sleep_minutes": int(refinement_sleep_minutes),
                         }
                     if log_path is not None:
                         st.caption(f"运行日志：`{display_path(log_path, APP_DIR)}`")

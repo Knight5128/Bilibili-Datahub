@@ -253,6 +253,16 @@ def prepare_author_refinement_session(
     )
 
 
+def build_followup_author_refinement_session(session_dir: Path) -> AuthorRefinementSessionContext:
+    return AuthorRefinementSessionContext(
+        root_dir=session_dir.parent,
+        session_dir=session_dir,
+        logs_dir=session_dir / "logs",
+        part_number=infer_next_author_refinement_part(session_dir),
+        is_new_session=False,
+    )
+
+
 def classify_author_refinement_error(exc: Exception) -> tuple[bool, str]:
     message = " ".join(str(exc).split())
     lowered = message.lower()

@@ -11,6 +11,7 @@ import pandas as pd
 from bili_pipeline.datahub.author_refinement import (
     AUTHOR_REFINEMENT_ORIGINAL_AUTHORS_FILENAME,
     AuthorMetadataBatchOutcome,
+    build_followup_author_refinement_session,
     build_session_expanded_author_list,
     crawl_author_metadata_with_guardrails,
     merge_author_metadata,
@@ -123,6 +124,18 @@ class AuthorRefinementTest(unittest.TestCase):
             self.assertFalse(session.is_new_session)
             self.assertEqual(session_dir, session.session_dir)
             self.assertEqual(2, session.part_number)
+
+    def test_build_followup_session_advances_to_next_part(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            session_dir = Path(tmp_dir)
+            pd.DataFrame([{"owner_mid": 1}]).to_csv(session_dir / "author_metadata_part_1.csv", index=False, encoding="utf-8-sig")
+            save_remaining_author_csv([2, 3], session_dir / "remaining_authors_part_1.csv")
+
+            followup = build_followup_author_refinement_session(session_dir)
+
+            self.assertEqual(session_dir, followup.session_dir)
+            self.assertEqual(2, followup.part_number)
+            self.assertFalse(followup.is_new_session)
 
     def test_build_session_expanded_author_list_merges_parts_back_to_original(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

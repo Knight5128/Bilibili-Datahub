@@ -2,7 +2,7 @@
   "session_dir": "outputs/author_refinements/author_refinement_20260330_161802",
   "task_started_at": "2026-03-30T16:18:02",
   "owner_mid_column": "owner_mid",
-  "source_name": "remaining_authors_part_1.csv",
+  "source_name": "remaining_authors_part_4.csv",
   "original_author_count": 2970,
   "parts": [
     {
@@ -40,11 +40,65 @@
       "remaining_file": "remaining_authors_part_2.csv",
       "failures_file": "failed_authors_part_2.csv",
       "log_file": "logs/20260330_181342_952776_author_refinement.log"
+    },
+    {
+      "part_number": 3,
+      "run_started_at": "2026-03-30T18:22:54",
+      "run_finished_at": "2026-03-30T18:27:29",
+      "input_owner_count": 2750,
+      "processed_owner_count": 112,
+      "successful_owner_count": 107,
+      "failure_count": 5,
+      "remaining_owner_count": 2639,
+      "risk_failure_count": 5,
+      "stopped_due_to_risk": true,
+      "last_risk_error": "接口返回错误代码：-352，信息：风控校验失败。 {'code': -352, 'message': '风控校验失败', 'ttl': 1, 'data': {'v_voucher': 'voucher_6d8fd71a-6a60-43a3-a48a-52eb9e98fac6'}}",
+      "metadata_part_file": "author_metadata_part_3.csv",
+      "accumulated_file": "expanded_author_list_accumulated.csv",
+      "remaining_file": "remaining_authors_part_3.csv",
+      "failures_file": "",
+      "log_file": "logs/20260330_182729_229911_author_refinement.log"
+    },
+    {
+      "part_number": 4,
+      "run_started_at": "2026-03-30T20:32:01",
+      "run_finished_at": "2026-03-30T20:37:44",
+      "input_owner_count": 2639,
+      "processed_owner_count": 139,
+      "successful_owner_count": 126,
+      "failure_count": 13,
+      "remaining_owner_count": 2501,
+      "risk_failure_count": 5,
+      "stopped_due_to_risk": true,
+      "last_risk_error": "接口返回错误代码：-352，信息：风控校验失败。 {'code': -352, 'message': '风控校验失败', 'ttl': 1, 'data': {'v_voucher': 'voucher_3e00e83f-af02-4d86-a01b-44455a3e36b1'}}",
+      "metadata_part_file": "author_metadata_part_4.csv",
+      "accumulated_file": "expanded_author_list_accumulated.csv",
+      "remaining_file": "remaining_authors_part_4.csv",
+      "failures_file": "",
+      "log_file": "logs/20260330_203744_858173_author_refinement_part_4.log"
+    },
+    {
+      "part_number": 5,
+      "run_started_at": "2026-03-30T20:42:48",
+      "run_finished_at": "2026-03-30T20:47:44",
+      "input_owner_count": 2501,
+      "processed_owner_count": 120,
+      "successful_owner_count": 114,
+      "failure_count": 6,
+      "remaining_owner_count": 2382,
+      "risk_failure_count": 5,
+      "stopped_due_to_risk": true,
+      "last_risk_error": "接口返回错误代码：-352，信息：风控校验失败。 {'code': -352, 'message': '风控校验失败', 'ttl': 1, 'data': {'v_voucher': 'voucher_dea6f79f-774c-4ebc-9ba4-22ab5d38a2d8'}}",
+      "metadata_part_file": "author_metadata_part_5.csv",
+      "accumulated_file": "expanded_author_list_accumulated.csv",
+      "remaining_file": "remaining_authors_part_5.csv",
+      "failures_file": "",
+      "log_file": "logs/20260330_204744_848259_author_refinement_part_5.log"
     }
   ],
   "completed_all": false,
   "latest_accumulated_file": "expanded_author_list_accumulated.csv",
-  "last_remaining_file": "remaining_authors_part_2.csv",
-  "last_risk_error": "接口返回错误代码：-352，信息：风控校验失败。 {'code': -352, 'message': '风控校验失败', 'ttl': 1, 'data': {'v_voucher': 'voucher_ee49f79c-50fb-4ac9-8500-b2bea815e2be'}}",
-  "updated_at": "2026-03-30T18:13:42"
+  "last_remaining_file": "remaining_authors_part_5.csv",
+  "last_risk_error": "接口返回错误代码：-352，信息：风控校验失败。 {'code': -352, 'message': '风控校验失败', 'ttl': 1, 'data': {'v_voucher': 'voucher_dea6f79f-774c-4ebc-9ba4-22ab5d38a2d8'}}",
+  "updated_at": "2026-03-30T20:47:44"
 }
