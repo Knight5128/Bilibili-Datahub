@@ -3,11 +3,12 @@ from __future__ import annotations
 import csv
 import io
 from functools import wraps
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from flask import Response, current_app, jsonify, request
 
-from .runner import TrackerRunner
+if TYPE_CHECKING:
+    from .runner import TrackerRunner
 
 
 def require_admin(view: Callable[..., Any]) -> Callable[..., Any]:

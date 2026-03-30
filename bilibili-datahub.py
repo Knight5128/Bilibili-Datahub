@@ -338,6 +338,33 @@ def _load_auto_form_defaults() -> dict[str, object]:
     return load_json_config(LOCAL_AUTO_CONFIG_PATH, DEFAULT_AUTO_CONFIG)
 
 
+def _serialize_cache_payload(payload: dict[str, object]) -> str:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+
+@st.cache_resource(show_spinner=False)
+def _build_store_cached(gcp_payload_json: str) -> BigQueryCrawlerStore:
+    return BigQueryCrawlerStore(build_gcp_config(json.loads(gcp_payload_json)))
+
+
+@st.cache_resource(show_spinner=False)
+def _build_local_runner_cached(
+    gcp_payload_json: str,
+    auto_payload_json: str,
+    cookie_text: str,
+) -> DataHubLocalCycleRunner:
+    return DataHubLocalCycleRunner(
+        gcp_config=build_gcp_config(json.loads(gcp_payload_json)),
+        auto_config=json.loads(auto_payload_json),
+        credential=build_credential_from_cookie(cookie_text),
+    )
+
+
+@st.cache_data(show_spinner=False, ttl=30)
+def _discover_manual_batch_source_csvs_cached() -> list[str]:
+    return [str(path) for path in discover_manual_batch_source_csvs()]
+
+
 def _build_default_log_dir(prefix: str, started_at: datetime) -> Path:
     return TEST_CRAWLS_OUTPUT_DIR / f"{prefix}_{started_at.strftime('%Y%m%d_%H%M%S')}"
 
@@ -416,38 +443,40 @@ auto_payload = {
 
 if trigger_save_gcp_config:
     saved_path = save_json_config(LOCAL_GCP_CONFIG_PATH, gcp_payload)
+    st.session_state.pop("datahub_auto_status_snapshot", None)
     st.sidebar.success(f"GCP 配置已保存：{saved_path}")
 if trigger_save_auto_config:
     saved_path = save_json_config(LOCAL_AUTO_CONFIG_PATH, auto_payload)
+    st.session_state.pop("datahub_auto_status_snapshot", None)
     st.sidebar.success(f"自动批量抓取配置已保存：{saved_path}")
 
 active_credential = build_credential_from_cookie(cookie_text)
 active_gcp_config = build_gcp_config(gcp_payload)
+gcp_payload_json = _serialize_cache_payload(gcp_payload)
+auto_payload_json = _serialize_cache_payload(auto_payload)
 active_media_strategy = _build_media_strategy(
     max_height=int(max_height),
     chunk_size_mb=int(chunk_size_mb),
     gcp_config=active_gcp_config,
 )
 
-store = None
-store_init_error = None
-if active_gcp_config.is_enabled():
-    try:
-        store = BigQueryCrawlerStore(active_gcp_config)
-    except Exception as exc:  # noqa: BLE001
-        store_init_error = str(exc)
+def _resolve_store() -> BigQueryCrawlerStore:
+    if not active_gcp_config.is_enabled():
+        raise ValueError("请先完成 GCP 配置。")
+    return _build_store_cached(gcp_payload_json)
 
-local_runner = None
-local_runner_error = None
-if active_gcp_config.is_enabled():
-    try:
-        local_runner = DataHubLocalCycleRunner(
-            gcp_config=active_gcp_config,
-            auto_config=auto_payload,
-            credential=active_credential,
-        )
-    except Exception as exc:  # noqa: BLE001
-        local_runner_error = str(exc)
+
+def _resolve_local_runner() -> DataHubLocalCycleRunner:
+    if not active_gcp_config.is_enabled():
+        raise ValueError("自动批量抓取尚未就绪，请先完成 GCP 配置。")
+    return _build_local_runner_cached(gcp_payload_json, auto_payload_json, cookie_text)
+
+
+def _load_auto_status_snapshot() -> dict[str, object]:
+    local_runner = _resolve_local_runner()
+    status_payload = local_runner.status()
+    status_payload["author_source_rows"] = local_runner.tracker_store.list_author_sources()
+    return status_payload
 
 field_reference_df = _get_field_reference_df()
 main_col, reference_col = st.columns([3.4, 1.6], gap="large")
@@ -1084,8 +1113,8 @@ with tab_debug:
     single_tab, api_tab = st.tabs(["单 bvid 全流程", "四类接口调试"])
 
     with single_tab:
-        if store_init_error:
-            st.warning(f"当前 GCP 存储尚未就绪：{store_init_error}")
+        if not active_gcp_config.is_enabled():
+            st.warning("单视频全流程抓取依赖 GCP 配置；请先完成侧边栏中的 BigQuery / GCS 设置。")
         with st.form("debug_single_form"):
             col_a, col_b = st.columns([2, 1])
             with col_a:
@@ -1094,7 +1123,7 @@ with tab_debug:
                 enable_media_single = st.checkbox("抓取媒体", value=True, key="single_enable_media")
             trigger_single_bundle = st.form_submit_button("开始单视频顺序抓取")
         if trigger_single_bundle:
-            if store is None:
+            if not active_gcp_config.is_enabled():
                 st.warning("请先完成 GCP 配置。")
             elif not single_bvid.strip():
                 st.warning("请先输入 bvid。")
@@ -1165,8 +1194,10 @@ with tab_debug:
 
 with tab_auto:
     st.subheader("自动批量抓取")
-    if local_runner_error:
-        st.warning(f"自动批量抓取尚未就绪：{local_runner_error}")
+    if not active_gcp_config.is_enabled():
+        st.warning("自动批量抓取依赖 GCP 配置；请先完成侧边栏中的 BigQuery / GCS 设置。")
+    else:
+        st.caption("为缩短启动时间，本页状态改为按需加载；需要时再点击“加载当前自动批量状态”。")
     upload_col, run_col, queue_col = st.columns(3)
     with upload_col:
         with st.form("auto_upload_form"):
@@ -1175,8 +1206,7 @@ with tab_auto:
             trigger_auto_upload = st.form_submit_button("上传 / 替换作者列表", width="stretch")
     if trigger_auto_upload:
         try:
-            if local_runner is None:
-                raise ValueError("自动批量抓取尚未就绪。")
+            local_runner = _resolve_local_runner()
             if author_upload is None:
                 raise ValueError("请先上传作者 CSV。")
             owner_mids = parse_owner_mid_upload(type("Upload", (), {"read": lambda self=None: author_upload.getvalue()})())
@@ -1194,8 +1224,7 @@ with tab_auto:
             trigger_auto_run = st.form_submit_button("手动触发一轮自动批量抓取", width="stretch")
     if trigger_auto_run:
         try:
-            if local_runner is None:
-                raise ValueError("自动批量抓取尚未就绪。")
+            local_runner = _resolve_local_runner()
             result = local_runner.run_cycle()
         except Exception as exc:  # noqa: BLE001
             st.error(f"自动批量抓取失败：{exc}")
@@ -1212,8 +1241,7 @@ with tab_auto:
             trigger_auto_queue = st.form_submit_button("抓取待补元数据 / 媒体数据", width="stretch")
     if trigger_auto_queue:
         try:
-            if local_runner is None:
-                raise ValueError("自动批量抓取尚未就绪。")
+            local_runner = _resolve_local_runner()
             report = local_runner.crawl_pending_once_data(
                 include_media=include_media_pending,
                 limit=int(pending_limit),
@@ -1230,29 +1258,39 @@ with tab_auto:
         except Exception as exc:  # noqa: BLE001
             st.error(f"处理待补数据失败：{exc}")
 
-    if local_runner is not None:
+    status_load_col, status_refresh_col = st.columns(2)
+    with status_load_col:
+        trigger_auto_status_load = st.button("加载当前自动批量状态", width="stretch")
+    with status_refresh_col:
+        trigger_auto_status_refresh = st.button("刷新自动批量状态", width="stretch")
+
+    if trigger_auto_status_load or trigger_auto_status_refresh:
         try:
-            status_payload = local_runner.status()
+            st.session_state["datahub_auto_status_snapshot"] = _load_auto_status_snapshot()
         except Exception as exc:  # noqa: BLE001
             st.warning(f"读取自动批量抓取状态失败：{exc}")
-        else:
-            metrics = status_payload.get("metrics", {})
-            st.caption(
-                f"活跃作者数 {status_payload.get('author_source_count', 0)}，"
-                f"待补元数据/媒体总数 {metrics.get('meta_media_queue_total', 0)}，"
-                f"仍待处理 {metrics.get('meta_media_queue_pending', 0)}。"
-            )
-            with st.expander("最近运行记录", expanded=True):
-                st.json(status_payload.get("recent_runs", []))
-            with st.expander("当前作者源", expanded=False):
-                st.dataframe(pd.DataFrame(status_payload.get("author_source_count") and local_runner.tracker_store.list_author_sources() or []), width="stretch", hide_index=True)
-            with st.expander("待补元数据/媒体清单", expanded=False):
-                st.dataframe(pd.DataFrame(status_payload.get("meta_media_queue_rows", [])).head(200), width="stretch", hide_index=True)
+
+    auto_status_snapshot = st.session_state.get("datahub_auto_status_snapshot")
+    if auto_status_snapshot is None:
+        st.caption("当前尚未加载自动批量抓取状态。")
+    else:
+        metrics = auto_status_snapshot.get("metrics", {})
+        st.caption(
+            f"活跃作者数 {auto_status_snapshot.get('author_source_count', 0)}，"
+            f"待补元数据/媒体总数 {metrics.get('meta_media_queue_total', 0)}，"
+            f"仍待处理 {metrics.get('meta_media_queue_pending', 0)}。"
+        )
+        with st.expander("最近运行记录", expanded=True):
+            st.json(auto_status_snapshot.get("recent_runs", []))
+        with st.expander("当前作者源", expanded=False):
+            st.dataframe(pd.DataFrame(auto_status_snapshot.get("author_source_rows", [])), width="stretch", hide_index=True)
+        with st.expander("待补元数据/媒体清单", expanded=False):
+            st.dataframe(pd.DataFrame(auto_status_snapshot.get("meta_media_queue_rows", [])).head(200), width="stretch", hide_index=True)
 
 with tab_manual_batch:
     st.subheader("手动批量抓取")
-    if store_init_error:
-        st.warning(f"当前 GCP 存储尚未就绪：{store_init_error}")
+    if not active_gcp_config.is_enabled():
+        st.warning("手动批量抓取依赖 GCP 配置；请先完成侧边栏中的 BigQuery / GCS 设置。")
     st.caption(
         "点击开始后，会自动汇总 `outputs/video_pool/full_site_floorings/` 下非 `_authors.csv` 的视频列表，"
         "以及 `outputs/video_pool/uid_expansions/` 目录及子目录下所有以 `videolist` 开头的 CSV，"
@@ -1268,7 +1306,7 @@ with tab_manual_batch:
         )
         parallelism = st.number_input("并发度", min_value=1, max_value=16, value=2, step=1, key="manual_batch_parallelism")
         trigger_manual_batch = st.form_submit_button("开始手动批量抓取")
-    source_csv_paths = discover_manual_batch_source_csvs()
+    source_csv_paths = [Path(path_str) for path_str in _discover_manual_batch_source_csvs_cached()]
     st.caption(f"当前匹配到 {len(source_csv_paths)} 个源 CSV；任务目录将写入：`{MANUAL_CRAWLS_OUTPUT_DIR.as_posix()}`")
     with st.expander("查看本次会被纳入候选池的源 CSV", expanded=False):
         if source_csv_paths:
@@ -1281,7 +1319,7 @@ with tab_manual_batch:
             st.info("暂未发现符合约定命名规则的视频列表 CSV。")
     if trigger_manual_batch:
         try:
-            if store is None:
+            if not active_gcp_config.is_enabled():
                 raise ValueError("请先完成 GCP 配置。")
             report = run_manual_realtime_batch_crawl(
                 gcp_config=active_gcp_config,
@@ -1307,8 +1345,8 @@ with tab_manual_batch:
 
 with tab_db:
     st.subheader("BigQuery / GCS 数据查看")
-    if store_init_error:
-        st.warning(f"当前 GCP 存储尚未就绪：{store_init_error}")
+    if not active_gcp_config.is_enabled():
+        st.warning("本页依赖 GCP 配置；请先完成侧边栏中的 BigQuery / GCS 设置。")
     db_view_col, asset_view_col = st.columns(2)
     with db_view_col:
         with st.form("db_view_structured_form"):
@@ -1316,8 +1354,7 @@ with tab_db:
             trigger_db_view = st.form_submit_button("查看该 bvid 的结构化数据", width="stretch")
     if trigger_db_view:
         try:
-            if store is None:
-                raise ValueError("请先完成 GCP 配置。")
+            store = _resolve_store()
             video_row = store.fetch_video_row(inspect_bvid_structured.strip())
             stat_row = store.fetch_latest_stat_snapshot_row(inspect_bvid_structured.strip())
             comment_row = store.fetch_latest_comment_snapshot_row(inspect_bvid_structured.strip())
@@ -1336,8 +1373,7 @@ with tab_db:
             trigger_asset_view = st.form_submit_button("查看该 bvid 的媒体资产", width="stretch")
     if trigger_asset_view:
         try:
-            if store is None:
-                raise ValueError("请先完成 GCP 配置。")
+            store = _resolve_store()
             asset_rows = store.fetch_all_asset_rows(inspect_bvid_assets.strip())
         except Exception as exc:  # noqa: BLE001
             st.error(f"读取媒体资产失败：{exc}")
