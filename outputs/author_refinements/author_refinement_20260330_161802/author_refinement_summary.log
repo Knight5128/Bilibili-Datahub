@@ -1,13 +1,13 @@
 author_refinement 任务总结
 session_dir: outputs/author_refinements/author_refinement_20260330_161802
-source_name: remaining_authors_part_4.csv
+source_name: remaining_authors_part_20.csv
 owner_mid_column: owner_mid
 original_author_count: 2970
-part_count: 5
-completed_all: False
+part_count: 27
+completed_all: True
 task_started_at: 2026-03-30T16:18:02
-updated_at: 2026-03-30T20:47:44
-last_risk_error: 接口返回错误代码：-352，信息：风控校验失败。 {'code': -352, 'message': '风控校验失败', 'ttl': 1, 'data': {'v_voucher': 'voucher_dea6f79f-774c-4ebc-9ba4-22ab5d38a2d8'}}
+updated_at: 2026-03-30T23:43:57
+last_risk_error: 
 
 [part_1]
 run_started_at: 2026-03-30T16:18:02
@@ -73,3 +73,289 @@ risk_failure_count: 5
 stopped_due_to_risk: True
 metadata_part_file: author_metadata_part_5.csv
 remaining_file: remaining_authors_part_5.csv
+
+[part_6]
+run_started_at: 2026-03-30T21:07:18
+run_finished_at: 2026-03-30T21:10:25
+input_owner_count: 2382
+processed_owner_count: 125
+successful_owner_count: 117
+failure_count: 8
+remaining_owner_count: 2258
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_6.csv
+remaining_file: remaining_authors_part_6.csv
+
+[part_7]
+run_started_at: 2026-03-30T21:13:25
+run_finished_at: 2026-03-30T21:16:23
+input_owner_count: 2258
+processed_owner_count: 118
+successful_owner_count: 113
+failure_count: 5
+remaining_owner_count: 2141
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_7.csv
+remaining_file: remaining_authors_part_7.csv
+
+[part_8]
+run_started_at: 2026-03-30T21:19:23
+run_finished_at: 2026-03-30T21:22:23
+input_owner_count: 2141
+processed_owner_count: 119
+successful_owner_count: 114
+failure_count: 5
+remaining_owner_count: 2023
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_8.csv
+remaining_file: remaining_authors_part_8.csv
+
+[part_9]
+run_started_at: 2026-03-30T21:25:23
+run_finished_at: 2026-03-30T21:28:18
+input_owner_count: 2023
+processed_owner_count: 116
+successful_owner_count: 111
+failure_count: 5
+remaining_owner_count: 1908
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_9.csv
+remaining_file: remaining_authors_part_9.csv
+
+[part_10]
+run_started_at: 2026-03-30T21:31:18
+run_finished_at: 2026-03-30T21:34:20
+input_owner_count: 1908
+processed_owner_count: 120
+successful_owner_count: 114
+failure_count: 6
+remaining_owner_count: 1789
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_10.csv
+remaining_file: remaining_authors_part_10.csv
+
+[part_11]
+run_started_at: 2026-03-30T21:37:20
+run_finished_at: 2026-03-30T21:40:15
+input_owner_count: 1789
+processed_owner_count: 116
+successful_owner_count: 111
+failure_count: 5
+remaining_owner_count: 1674
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_11.csv
+remaining_file: remaining_authors_part_11.csv
+
+[part_12]
+run_started_at: 2026-03-30T21:43:15
+run_finished_at: 2026-03-30T21:46:25
+input_owner_count: 1674
+processed_owner_count: 122
+successful_owner_count: 115
+failure_count: 7
+remaining_owner_count: 1553
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_12.csv
+remaining_file: remaining_authors_part_12.csv
+
+[part_13]
+run_started_at: 2026-03-30T21:49:25
+run_finished_at: 2026-03-30T21:52:24
+input_owner_count: 1553
+processed_owner_count: 111
+successful_owner_count: 106
+failure_count: 5
+remaining_owner_count: 1443
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_13.csv
+remaining_file: remaining_authors_part_13.csv
+
+[part_14]
+run_started_at: 2026-03-30T21:55:24
+run_finished_at: 2026-03-30T21:58:46
+input_owner_count: 1443
+processed_owner_count: 122
+successful_owner_count: 117
+failure_count: 5
+remaining_owner_count: 1322
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_14.csv
+remaining_file: remaining_authors_part_14.csv
+
+[part_15]
+run_started_at: 2026-03-30T22:01:46
+run_finished_at: 2026-03-30T22:05:03
+input_owner_count: 1322
+processed_owner_count: 115
+successful_owner_count: 110
+failure_count: 5
+remaining_owner_count: 1208
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_15.csv
+remaining_file: remaining_authors_part_15.csv
+
+[part_16]
+run_started_at: 2026-03-30T22:08:03
+run_finished_at: 2026-03-30T22:09:41
+input_owner_count: 1208
+processed_owner_count: 60
+successful_owner_count: 55
+failure_count: 5
+remaining_owner_count: 1149
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_16.csv
+remaining_file: remaining_authors_part_16.csv
+
+[part_17]
+run_started_at: 2026-03-30T22:12:41
+run_finished_at: 2026-03-30T22:15:43
+input_owner_count: 1149
+processed_owner_count: 113
+successful_owner_count: 108
+failure_count: 5
+remaining_owner_count: 1037
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_17.csv
+remaining_file: remaining_authors_part_17.csv
+
+[part_18]
+run_started_at: 2026-03-30T22:18:43
+run_finished_at: 2026-03-30T22:21:51
+input_owner_count: 1037
+processed_owner_count: 113
+successful_owner_count: 108
+failure_count: 5
+remaining_owner_count: 925
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_18.csv
+remaining_file: remaining_authors_part_18.csv
+
+[part_19]
+run_started_at: 2026-03-30T22:24:51
+run_finished_at: 2026-03-30T22:28:06
+input_owner_count: 925
+processed_owner_count: 116
+successful_owner_count: 111
+failure_count: 5
+remaining_owner_count: 810
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_19.csv
+remaining_file: remaining_authors_part_19.csv
+
+[part_20]
+run_started_at: 2026-03-30T22:31:06
+run_finished_at: 2026-03-30T22:34:16
+input_owner_count: 810
+processed_owner_count: 112
+successful_owner_count: 107
+failure_count: 5
+remaining_owner_count: 699
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_20.csv
+remaining_file: remaining_authors_part_20.csv
+
+[part_21]
+run_started_at: 2026-03-30T22:56:05
+run_finished_at: 2026-03-30T23:00:54
+input_owner_count: 699
+processed_owner_count: 115
+successful_owner_count: 106
+failure_count: 9
+remaining_owner_count: 585
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_21.csv
+remaining_file: remaining_authors_part_21.csv
+
+[part_22]
+run_started_at: 2026-03-30T23:03:54
+run_finished_at: 2026-03-30T23:08:41
+input_owner_count: 585
+processed_owner_count: 114
+successful_owner_count: 109
+failure_count: 5
+remaining_owner_count: 472
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_22.csv
+remaining_file: remaining_authors_part_22.csv
+
+[part_23]
+run_started_at: 2026-03-30T23:11:41
+run_finished_at: 2026-03-30T23:16:29
+input_owner_count: 472
+processed_owner_count: 114
+successful_owner_count: 109
+failure_count: 5
+remaining_owner_count: 359
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_23.csv
+remaining_file: remaining_authors_part_23.csv
+
+[part_24]
+run_started_at: 2026-03-30T23:19:29
+run_finished_at: 2026-03-30T23:24:51
+input_owner_count: 359
+processed_owner_count: 124
+successful_owner_count: 119
+failure_count: 5
+remaining_owner_count: 236
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_24.csv
+remaining_file: remaining_authors_part_24.csv
+
+[part_25]
+run_started_at: 2026-03-30T23:27:51
+run_finished_at: 2026-03-30T23:32:45
+input_owner_count: 236
+processed_owner_count: 116
+successful_owner_count: 111
+failure_count: 5
+remaining_owner_count: 121
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_25.csv
+remaining_file: remaining_authors_part_25.csv
+
+[part_26]
+run_started_at: 2026-03-30T23:35:45
+run_finished_at: 2026-03-30T23:40:40
+input_owner_count: 121
+processed_owner_count: 115
+successful_owner_count: 108
+failure_count: 7
+remaining_owner_count: 7
+risk_failure_count: 5
+stopped_due_to_risk: True
+metadata_part_file: author_metadata_part_26.csv
+remaining_file: remaining_authors_part_26.csv
+
+[part_27]
+run_started_at: 2026-03-30T23:43:40
+run_finished_at: 2026-03-30T23:43:57
+input_owner_count: 7
+processed_owner_count: 7
+successful_owner_count: 7
+failure_count: 0
+remaining_owner_count: 0
+risk_failure_count: 0
+stopped_due_to_risk: False
+metadata_part_file: author_metadata_part_27.csv
+remaining_file:
