@@ -9,12 +9,36 @@ from bili_pipeline.storage import BigQueryCrawlerStore
 
 from .discovery import discover_author_videos, discover_rankboard_videos
 from .settings import TrackerSettings
-from .store import TrackerStore
+from .store import DiscoveredVideoRow, TrackerStore
 from .tracking import SnapshotTaskResult, snapshot_videos
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _merge_discovered_rows(rows: list[DiscoveredVideoRow]) -> list[DiscoveredVideoRow]:
+    merged: dict[str, DiscoveredVideoRow] = {}
+    for row in rows:
+        existing = merged.get(row.bvid)
+        if existing is None:
+            merged[row.bvid] = row
+            continue
+        if row.owner_mid is not None and existing.owner_mid is None:
+            existing.owner_mid = row.owner_mid
+        if row.pubdate is not None and existing.pubdate is None:
+            existing.pubdate = row.pubdate
+        if row.discovered_at < existing.discovered_at:
+            existing.discovered_at = row.discovered_at
+        if row.tracking_deadline is not None:
+            if existing.tracking_deadline is None or row.tracking_deadline > existing.tracking_deadline:
+                existing.tracking_deadline = row.tracking_deadline
+            if row.status == "active":
+                existing.status = "active"
+        for source in row.discovery_sources:
+            if source not in existing.discovery_sources:
+                existing.discovery_sources.append(source)
+    return list(merged.values())
 
 
 @dataclass(slots=True)
@@ -127,7 +151,7 @@ class TrackerRunner:
             for owner_mid in successful_owner_mids:
                 self.tracker_store.mark_author_checked(int(owner_mid), success=True)
 
-            discovered_rows = rankboard_rows + author_discovered
+            discovered_rows = _merge_discovered_rows(rankboard_rows + author_discovered)
             self.tracker_store.upsert_discovered_videos(discovered_rows)
             report.discovered_count = len(discovered_rows)
             report.details["rankboard_discovered_count"] = len(rankboard_rows)
