@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
 import pandas as pd
@@ -24,7 +25,18 @@ def parse_comma_separated_keys(raw: str) -> list[str]:
 def read_uploaded_dataframe(uploaded_file) -> pd.DataFrame:
     suffix = Path(uploaded_file.name).suffix.lower()
     if suffix == ".csv":
-        return pd.read_csv(uploaded_file)
+        if hasattr(uploaded_file, "getvalue"):
+            raw = uploaded_file.getvalue()
+        else:
+            raw = uploaded_file.read()
+            if hasattr(uploaded_file, "seek"):
+                uploaded_file.seek(0)
+        for encoding in ("utf-8-sig", "utf-8", "gb18030"):
+            try:
+                return pd.read_csv(io.BytesIO(raw), encoding=encoding, dtype=object)
+            except UnicodeDecodeError:
+                continue
+        raise ValueError(f"无法识别 CSV 编码：{uploaded_file.name}")
     if suffix in {".xlsx", ".xls"}:
         return pd.read_excel(uploaded_file)
     raise ValueError(f"Unsupported file type: {uploaded_file.name}")

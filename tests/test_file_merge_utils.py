@@ -1,10 +1,26 @@
 from __future__ import annotations
 
+import io
 import unittest
 
 import pandas as pd
 
-from bili_pipeline.utils.file_merge import deduplicate_dataframe, merge_dataframes
+from bili_pipeline.utils.file_merge import deduplicate_dataframe, merge_dataframes, read_uploaded_dataframe
+
+
+class _UploadedFileStub:
+    def __init__(self, name: str, raw: bytes) -> None:
+        self.name = name
+        self._raw = raw
+
+    def getvalue(self) -> bytes:
+        return self._raw
+
+    def read(self, *_args, **_kwargs) -> bytes:
+        return self._raw
+
+    def seek(self, *_args, **_kwargs) -> int:
+        return 0
 
 
 class FileMergeUtilsTest(unittest.TestCase):
@@ -42,6 +58,16 @@ class FileMergeUtilsTest(unittest.TestCase):
             ],
             deduplicated.to_dict("records"),
         )
+
+    def test_read_uploaded_dataframe_supports_gb18030_csv(self) -> None:
+        raw = "owner_mid,备注\n123,测试\n".encode("gb18030")
+        uploaded = _UploadedFileStub("owner_mid.csv", raw)
+
+        loaded = read_uploaded_dataframe(uploaded)
+
+        self.assertEqual(["owner_mid", "备注"], loaded.columns.tolist())
+        self.assertEqual("123", str(loaded.iloc[0]["owner_mid"]))
+        self.assertEqual("测试", loaded.iloc[0]["备注"])
 
 
 if __name__ == "__main__":

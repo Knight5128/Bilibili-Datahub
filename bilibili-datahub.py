@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import io
 import json
 import time
 from datetime import datetime, timezone
@@ -1525,8 +1524,7 @@ with tab_manual_batch:
             st.warning("请先选择 CSV 文件。")
         else:
             try:
-                raw = author_upload.getvalue()
-                frame = pd.read_csv(io.BytesIO(raw), dtype=object)
+                frame = read_uploaded_dataframe(author_upload)
                 rows = frame.to_dict(orient="records")
                 saved = save_local_author_list(rows, video_data_root=vd_root)
                 now_iso = datetime.now(timezone.utc).isoformat()
