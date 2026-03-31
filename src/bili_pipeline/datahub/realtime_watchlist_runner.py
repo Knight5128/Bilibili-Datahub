@@ -454,6 +454,7 @@ _RISK_TEXT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"风控"),
 )
 _RISK_CODE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?<!\d)-352\b", re.IGNORECASE),
     re.compile(r"\b(?:http|bilibili|status|status code|response|error code|code|errno)\s*[:=#()\s-]*-?352\b", re.IGNORECASE),
     re.compile(r"\b(?:http|bilibili|status|status code|response|error code|code|errno)\s*[:=#()\s-]*412\b", re.IGNORECASE),
     re.compile(r"\b(?:http|bilibili|status|status code|response|error code|code|errno)\s*[:=#()\s-]*429\b", re.IGNORECASE),
@@ -751,6 +752,37 @@ def _summarize_crawl_report(crawl_report: BatchCrawlReport | None) -> dict[str, 
     }
 
 
+def _extract_crawl_report_messages(crawl_report: BatchCrawlReport | None) -> list[str]:
+    if crawl_report is None:
+        return []
+    messages: list[str] = []
+    stop_reason = str(getattr(crawl_report, "stop_reason", "") or "").strip()
+    if stop_reason:
+        messages.append(stop_reason)
+    for summary in getattr(crawl_report, "summaries", []) or []:
+        for error in getattr(summary, "errors", []) or []:
+            text = str(error).strip()
+            if text:
+                messages.append(text)
+    return messages
+
+
+def _crawl_report_hits_risk(crawl_report: BatchCrawlReport | None) -> bool:
+    return any(is_risk_error(RuntimeError(message)) for message in _extract_crawl_report_messages(crawl_report))
+
+
+def _summarize_stage7_sleep_resume(crawl_reports: Sequence[BatchCrawlReport], *, sleep_count: int) -> dict[str, Any]:
+    last_report = crawl_reports[-1] if crawl_reports else None
+    return {
+        "task_count": len(crawl_reports),
+        "sleep_count": int(sleep_count),
+        "final_remaining_count": int(getattr(last_report, "remaining_count", 0) or 0) if last_report is not None else 0,
+        "final_completed_all": bool(getattr(last_report, "completed_all", False)) if last_report is not None else False,
+        "final_stop_reason": str(getattr(last_report, "stop_reason", "") or "").strip() if last_report is not None else "",
+        "crawl_reports": [_summarize_crawl_report(report) for report in crawl_reports],
+    }
+
+
 def _write_manual_crawl_state(path: Path, payload: Mapping[str, Any]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -875,6 +907,8 @@ class RealtimeWatchlistRunResult:
     session_dir: str | None
     root_watchlist_csv_path: str | None
     crawl_report: BatchCrawlReport | None
+    stage7_task_count: int = 0
+    stage7_sleep_count: int = 0
 
 
 def run_realtime_watchlist_cycle(
@@ -937,6 +971,8 @@ def run_realtime_watchlist_cycle(
     filtered_path = session_dir / FILTERED_VIDEO_LIST_NAME
     root_csv = realtime_watchlist_current_csv_path(root)
     crawl_report: BatchCrawlReport | None = None
+    stage7_crawl_reports: list[BatchCrawlReport] = []
+    stage7_sleep_count = 0
     current_stage: dict[str, Any] | None = None
     owner_rows: list[dict[str, Any]] = []
     author_risk_retry_count = 0
@@ -1047,28 +1083,43 @@ def run_realtime_watchlist_cycle(
             _log_stage_end(6, "build final filtered list for crawl", final=len(final_rows))
             current_stage = {"stage_id": 7, "stage_label": "run realtime crawl"}
             _log_stage_start(7, "run realtime crawl")
-            crawl_report = crawl_executor(
-                filtered_path,
-                parallelism=parallelism,
-                enable_media=enable_media,
-                task_mode=CrawlTaskMode.REALTIME_ONLY,
-                comment_limit=comment_limit,
-                consecutive_failure_limit=consecutive_failure_limit,
-                gcp_config=gcp_config,
-                max_height=max_height,
-                chunk_size_mb=chunk_size_mb,
-                media_strategy=media_strategy,
-                credential=credential,
-                output_root_dir=root,
-                source_csv_name=FILTERED_VIDEO_LIST_NAME,
-                session_dir=session_dir,
-            )
+            current_csv_path = filtered_path
+            while True:
+                crawl_report = crawl_executor(
+                    current_csv_path,
+                    parallelism=parallelism,
+                    enable_media=enable_media,
+                    task_mode=CrawlTaskMode.REALTIME_ONLY,
+                    comment_limit=comment_limit,
+                    consecutive_failure_limit=consecutive_failure_limit,
+                    gcp_config=gcp_config,
+                    max_height=max_height,
+                    chunk_size_mb=chunk_size_mb,
+                    media_strategy=media_strategy,
+                    credential=credential,
+                    output_root_dir=root,
+                    source_csv_name=Path(current_csv_path).name,
+                    session_dir=session_dir,
+                )
+                stage7_crawl_reports.append(crawl_report)
+                remaining_csv_path = str(getattr(crawl_report, "remaining_csv_path", "") or "").strip()
+                if bool(getattr(crawl_report, "completed_all", False)) or int(getattr(crawl_report, "remaining_count", 0) or 0) == 0:
+                    break
+                if _crawl_report_hits_risk(crawl_report) and remaining_csv_path:
+                    _log_risk_sleep_notice("stage 7 realtime crawl", sleep_minutes)
+                    stage7_sleep_count += 1
+                    risk_sleep(max(0.0, float(sleep_minutes)) * 60.0)
+                    current_csv_path = Path(remaining_csv_path)
+                    continue
+                break
             _log_stage_end(
                 7,
                 "run realtime crawl",
                 processed=crawl_report.processed_count,
                 success=crawl_report.success_count,
                 failed=crawl_report.failed_count,
+                task_count=len(stage7_crawl_reports),
+                sleep_count=stage7_sleep_count,
             )
         else:
             _log_stage_end(6, "build final filtered list for crawl", final=0)
@@ -1117,6 +1168,7 @@ def run_realtime_watchlist_cycle(
                 "author_failed_owner_count_note": "当前实现对风控错误会持续睡眠重试；非风控错误直接中止本轮任务，因此该计数当前不表示已放弃作者，通常为 0。",
                 "non_risk_errors_abort_run": True,
             },
+            "stage7_sleep_resume": _summarize_stage7_sleep_resume(stage7_crawl_reports, sleep_count=stage7_sleep_count),
             "crawl_result": _summarize_crawl_report(crawl_report),
         }
         _write_manual_crawl_state(session_dir / MANUAL_CRAWL_STATE_NAME, manual_state_payload)
@@ -1139,6 +1191,8 @@ def run_realtime_watchlist_cycle(
             session_dir=str(session_dir.resolve()),
             root_watchlist_csv_path=str(root_csv.resolve()),
             crawl_report=crawl_report,
+            stage7_task_count=len(stage7_crawl_reports),
+            stage7_sleep_count=stage7_sleep_count,
         )
     except Exception as exc:
         finished_iso = datetime.now(timezone.utc).isoformat()
@@ -1194,6 +1248,7 @@ def run_realtime_watchlist_cycle(
                     "author_failed_owner_count_note": "当前实现对风控错误会持续睡眠重试；非风控错误直接中止本轮任务，因此该计数当前不表示已放弃作者，通常为 0。",
                     "non_risk_errors_abort_run": True,
                 },
+                "stage7_sleep_resume": _summarize_stage7_sleep_resume(stage7_crawl_reports, sleep_count=stage7_sleep_count),
                 "crawl_result": _summarize_crawl_report(crawl_report),
             }
             _write_manual_crawl_state(session_dir / MANUAL_CRAWL_STATE_NAME, failure_payload)

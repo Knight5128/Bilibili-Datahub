@@ -494,6 +494,132 @@ class RealtimeWatchlistOrchestrationTest(unittest.TestCase):
             self.assertIn("Stage 7 start: run realtime crawl", joined_logs)
             self.assertIn("Stage 7 end: run realtime crawl", joined_logs)
 
+    def test_stage7_risk_stop_sleeps_and_retries_remaining_csv(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _video_data_root(tmp)
+            save_local_author_list([{"owner_mid": 114}], video_data_root=root)
+            _write_minimal_watchlist_state(root)
+            t = _FIX_NOW - timedelta(hours=1)
+            remaining_csv = str(root / "manual_crawls" / "manual_crawl_20260329_120000" / "remaining_bvids_part_1.csv")
+            crawl_inputs: list[str] = []
+
+            def fake_crawl(csv_path, **_kwargs):
+                crawl_inputs.append(str(csv_path))
+                if len(crawl_inputs) == 1:
+                    return BatchCrawlReport(
+                        run_id="run-risk",
+                        total_bvids=2,
+                        processed_count=1,
+                        success_count=0,
+                        failed_count=1,
+                        remaining_count=1,
+                        started_at=_FIX_NOW,
+                        finished_at=_FIX_NOW,
+                        task_mode=CrawlTaskMode.REALTIME_ONLY.value,
+                        completed_all=False,
+                        stop_reason="检测到风控错误 code=352，已导出 remaining CSV 供继续执行。",
+                        session_dir="session-dir",
+                        logs_dir="logs-dir",
+                        remaining_csv_path=remaining_csv,
+                    )
+                return BatchCrawlReport(
+                    run_id="run-final",
+                    total_bvids=1,
+                    processed_count=1,
+                    success_count=1,
+                    failed_count=0,
+                    remaining_count=0,
+                    started_at=_FIX_NOW,
+                    finished_at=_FIX_NOW,
+                    task_mode=CrawlTaskMode.REALTIME_ONLY.value,
+                    completed_all=True,
+                    stop_reason="当前 batch_crawl 已完成，所有视频均已成功抓取。",
+                    session_dir="session-dir",
+                    logs_dir="logs-dir",
+                )
+
+            sleep_mock = MagicMock()
+            result = run_realtime_watchlist_cycle(
+                video_data_root=root,
+                now=_FIX_NOW,
+                time_window_hours=48,
+                hot_fetch_fn=lambda: [_hot_candidate("BV_STAGE7", t)],
+                rankboard_fetch_fn=lambda: [],
+                author_fetch_fn=lambda *_: [],
+                crawl_fn=fake_crawl,
+                sleep_minutes=7.0,
+                sleep_fn=sleep_mock,
+            )
+
+            self.assertEqual(2, len(crawl_inputs))
+            self.assertTrue(crawl_inputs[0].endswith("filtered_video_list.csv"))
+            self.assertEqual(remaining_csv, crawl_inputs[1])
+            sleep_mock.assert_called_once_with(420.0)
+            self.assertTrue(result.crawl_report is not None)
+            self.assertTrue(result.crawl_report.completed_all)
+
+    def test_manual_crawl_state_records_stage7_sleep_resume_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _video_data_root(tmp)
+            save_local_author_list([{"owner_mid": 115}], video_data_root=root)
+            _write_minimal_watchlist_state(root)
+            t = _FIX_NOW - timedelta(hours=1)
+            remaining_csv = str(root / "manual_crawls" / "manual_crawl_20260329_120001" / "remaining_bvids_part_1.csv")
+            call_count = {"count": 0}
+
+            def fake_crawl(_csv_path, **_kwargs):
+                call_count["count"] += 1
+                if call_count["count"] == 1:
+                    return BatchCrawlReport(
+                        run_id="run-risk",
+                        total_bvids=2,
+                        processed_count=1,
+                        success_count=0,
+                        failed_count=1,
+                        remaining_count=1,
+                        started_at=_FIX_NOW,
+                        finished_at=_FIX_NOW,
+                        task_mode=CrawlTaskMode.REALTIME_ONLY.value,
+                        completed_all=False,
+                        stop_reason="bilibili 412 precondition failed",
+                        session_dir="session-dir",
+                        logs_dir="logs-dir",
+                        remaining_csv_path=remaining_csv,
+                    )
+                return BatchCrawlReport(
+                    run_id="run-final",
+                    total_bvids=1,
+                    processed_count=1,
+                    success_count=1,
+                    failed_count=0,
+                    remaining_count=0,
+                    started_at=_FIX_NOW,
+                    finished_at=_FIX_NOW,
+                    task_mode=CrawlTaskMode.REALTIME_ONLY.value,
+                    completed_all=True,
+                    stop_reason="当前 batch_crawl 已完成，所有视频均已成功抓取。",
+                    session_dir="session-dir",
+                    logs_dir="logs-dir",
+                )
+
+            result = run_realtime_watchlist_cycle(
+                video_data_root=root,
+                now=_FIX_NOW,
+                time_window_hours=48,
+                hot_fetch_fn=lambda: [_hot_candidate("BV_STATE", t)],
+                rankboard_fetch_fn=lambda: [],
+                author_fetch_fn=lambda *_: [],
+                crawl_fn=fake_crawl,
+                sleep_minutes=5.0,
+                sleep_fn=lambda _s: None,
+            )
+
+            payload = json.loads((Path(result.session_dir) / "manual_crawl_state.json").read_text(encoding="utf-8"))
+            self.assertEqual(2, payload["stage7_sleep_resume"]["task_count"])
+            self.assertEqual(1, payload["stage7_sleep_resume"]["sleep_count"])
+            self.assertEqual(0, payload["stage7_sleep_resume"]["final_remaining_count"])
+            self.assertEqual(2, len(payload["stage7_sleep_resume"]["crawl_reports"]))
+
     def test_hot_stage_risk_error_sleeps_then_retries(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = _video_data_root(tmp)
@@ -782,6 +908,38 @@ class RealtimeWatchlistOrchestrationTest(unittest.TestCase):
             sleep_mock.assert_called_once_with(300.0)
             self.assertEqual(2, len(rank_calls))
 
+    def test_rankboard_negative_352_error_sleeps_then_retries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _video_data_root(tmp)
+            save_local_author_list([{"owner_mid": 802}], video_data_root=root)
+            _write_minimal_watchlist_state(root)
+
+            t = _FIX_NOW - timedelta(hours=1)
+            rank_calls: list[int] = []
+
+            def fake_rank() -> list[RankboardEntry]:
+                rank_calls.append(1)
+                if len(rank_calls) == 1:
+                    raise ValueError("排行榜接口返回异常: -352")
+                return [_rank_entry("BV_R352", t)]
+
+            sleep_mock = MagicMock()
+
+            run_realtime_watchlist_cycle(
+                video_data_root=root,
+                now=_FIX_NOW,
+                time_window_hours=48,
+                sleep_minutes=5.0,
+                hot_fetch_fn=lambda: [],
+                rankboard_fetch_fn=fake_rank,
+                author_fetch_fn=lambda *_: [],
+                crawl_fn=MagicMock(),
+                sleep_fn=sleep_mock,
+            )
+
+            sleep_mock.assert_called_once_with(300.0)
+            self.assertEqual(2, len(rank_calls))
+
     def test_author_discovery_risk_error_sleeps_then_resumes_remaining_owners(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = _video_data_root(tmp)
@@ -882,6 +1040,7 @@ class RealtimeWatchlistOrchestrationTest(unittest.TestCase):
     def test_is_risk_error_avoids_generic_number_false_positive(self) -> None:
         self.assertFalse(is_risk_error(RuntimeError("processed 429 rows successfully")))
         self.assertTrue(is_risk_error(RuntimeError("HTTP 429 too many requests")))
+        self.assertTrue(is_risk_error(RuntimeError("排行榜接口返回异常: -352")))
 
 
 if __name__ == "__main__":

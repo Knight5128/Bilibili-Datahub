@@ -383,7 +383,9 @@ class BilibiliRankboardSource:
             retry_backoff_seconds=self.retry_backoff_seconds,
         )
         if payload.get("code") != 0:
-            raise ValueError(f"排行榜接口返回异常: {payload.get('message') or payload.get('msg') or payload.get('code')}")
+            code = payload.get("code")
+            message = payload.get("message") or payload.get("msg") or ""
+            raise ValueError(f"排行榜接口返回异常: code={code}, message={message}")
         items = payload.get("data", {}).get("list", [])
         return [
             _parse_rankboard_item(
