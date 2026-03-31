@@ -31,3 +31,4 @@ __*.csv
 !outputs/**
 !docs/
 !docs/**
+.worktrees/
