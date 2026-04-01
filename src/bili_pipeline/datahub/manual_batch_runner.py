@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,6 +12,7 @@ import pandas as pd
 from bili_pipeline.crawl_api import DEFAULT_VIDEO_DATA_OUTPUT_DIR, crawl_bvid_list_from_csv
 from bili_pipeline.models import BatchCrawlReport, CrawlTaskMode, GCPStorageConfig, MediaDownloadStrategy
 
+from .background_tasks import run_batched_crawl_from_csv
 from .discover_ops import DEFAULT_VIDEO_POOL_OUTPUT_DIR, UID_EXPANSION_DIRNAME
 from .shared import save_timestamped_task_log
 
@@ -20,6 +22,18 @@ MANUAL_CRAWLS_OUTPUT_DIR = DEFAULT_VIDEO_DATA_OUTPUT_DIR / "manual_crawls"
 MANUAL_CRAWL_STATE_FILENAME = "manual_crawl_state.json"
 MANUAL_CRAWL_FILTERED_FILENAME = "filtered_video_list.csv"
 MANUAL_CRAWL_STAT_COMMENT_PREFIX = "manual_crawl_stat_comment_"
+_COOKIE_RETRY_PATTERNS = (
+    re.compile(r"\btoo many requests\b", re.IGNORECASE),
+    re.compile(r"\bprecondition failed\b", re.IGNORECASE),
+    re.compile(r"\b(?:status|code|error|errno)\s*[:=#()\s-]*-?352\b", re.IGNORECASE),
+    re.compile(r"\b(?:status|code|error|errno)\s*[:=#()\s-]*412\b", re.IGNORECASE),
+    re.compile(r"\b(?:status|code|error|errno)\s*[:=#()\s-]*429\b", re.IGNORECASE),
+    re.compile(r"\blogin\b", re.IGNORECASE),
+    re.compile(r"\bcookie\b", re.IGNORECASE),
+    re.compile(r"\bsessdata\b", re.IGNORECASE),
+    re.compile(r"\bbili_jct\b", re.IGNORECASE),
+    re.compile(r"风控"),
+)
 
 
 def _timestamp_token(value: datetime) -> str:
@@ -48,6 +62,20 @@ def _write_manual_state(session_dir: Path, payload: dict[str, Any]) -> Path:
     session_dir.mkdir(parents=True, exist_ok=True)
     state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return state_path
+
+
+def _report_supports_cookie_retry(report: Any) -> bool:
+    messages: list[str] = []
+    stop_reason = str(getattr(report, "stop_reason", "") or "").strip()
+    if stop_reason:
+        messages.append(stop_reason)
+    for summary in getattr(report, "summaries", []) or []:
+        for error in getattr(summary, "errors", []) or []:
+            text = str(error).strip()
+            if text:
+                messages.append(text)
+    combined = " ".join(messages)
+    return any(pattern.search(combined) for pattern in _COOKIE_RETRY_PATTERNS)
 
 
 def _pick_latest_flooring_csv(directory: Path, prefix: str) -> Path | None:
@@ -190,6 +218,9 @@ class ManualBatchCrawlResult:
     filtered_csv_path: str | None = None
     wrapper_log_path: str | None = None
     crawl_report: BatchCrawlReport | None = None
+    crawl_reports: list[dict[str, Any]] | None = None
+    task_count: int = 0
+    cookie_refresh_count: int = 0
     error: str = ""
     started_at: datetime | None = None
     finished_at: datetime | None = None
@@ -208,6 +239,9 @@ class ManualBatchCrawlResult:
             "filtered_csv_path": self.filtered_csv_path,
             "wrapper_log_path": self.wrapper_log_path,
             "crawl_report": self.crawl_report.to_dict() if self.crawl_report is not None else None,
+            "crawl_reports": self.crawl_reports or [],
+            "task_count": self.task_count,
+            "cookie_refresh_count": self.cookie_refresh_count,
             "error": self.error,
             "started_at": self.started_at.isoformat() if self.started_at is not None else None,
             "finished_at": self.finished_at.isoformat() if self.finished_at is not None else None,
@@ -229,6 +263,8 @@ def run_manual_realtime_batch_crawl(
     manual_crawls_root_dir: Path | str | None = None,
     selected_flooring_csvs: Sequence[str] | None = None,
     selected_uid_task_dirs: Sequence[str] | None = None,
+    credential_provider: Callable[[], Any | None] | None = None,
+    cookie_refresh_batch_size: int = 100,
     started_at: datetime | None = None,
 ) -> ManualBatchCrawlResult:
     if not gcp_config.is_enabled():
@@ -361,22 +397,49 @@ def run_manual_realtime_batch_crawl(
         )
         _log("[INFO] 开始执行手动批量抓取（仅实时互动量 / 评论数据）。")
 
-        crawl_report = crawl_bvid_list_from_csv(
-            filtered_csv_path,
-            parallelism=int(parallelism),
-            enable_media=False,
-            task_mode=CrawlTaskMode.REALTIME_ONLY,
-            comment_limit=int(comment_limit),
-            consecutive_failure_limit=int(consecutive_failure_limit),
-            gcp_config=gcp_config,
-            max_height=max_height,
-            chunk_size_mb=chunk_size_mb,
-            media_strategy=media_strategy,
-            credential=credential,
-            output_root_dir=manual_crawls_root,
-            source_csv_name=filtered_csv_path.name,
-            session_dir=session_dir,
-        )
+        if credential_provider is None:
+            crawl_report = crawl_bvid_list_from_csv(
+                filtered_csv_path,
+                parallelism=int(parallelism),
+                enable_media=False,
+                task_mode=CrawlTaskMode.REALTIME_ONLY,
+                comment_limit=int(comment_limit),
+                consecutive_failure_limit=int(consecutive_failure_limit),
+                gcp_config=gcp_config,
+                max_height=max_height,
+                chunk_size_mb=chunk_size_mb,
+                media_strategy=media_strategy,
+                credential=credential,
+                output_root_dir=manual_crawls_root,
+                source_csv_name=filtered_csv_path.name,
+                session_dir=session_dir,
+            )
+            crawl_reports_payload = [crawl_report.to_dict()]
+            task_count = 1
+            cookie_refresh_count = 0
+        else:
+            batched_outcome = run_batched_crawl_from_csv(
+                filtered_csv_path,
+                batch_size=int(cookie_refresh_batch_size),
+                crawl_fn=crawl_bvid_list_from_csv,
+                credential_provider=credential_provider,
+                parallelism=int(parallelism),
+                enable_media=False,
+                task_mode=CrawlTaskMode.REALTIME_ONLY,
+                comment_limit=int(comment_limit),
+                consecutive_failure_limit=int(consecutive_failure_limit),
+                gcp_config=gcp_config,
+                max_height=max_height,
+                chunk_size_mb=chunk_size_mb,
+                media_strategy=media_strategy,
+                output_root_dir=manual_crawls_root,
+                session_dir=session_dir,
+                should_retry_remaining_fn=_report_supports_cookie_retry,
+            )
+            crawl_report = batched_outcome.reports[-1]
+            crawl_reports_payload = [report.to_dict() for report in batched_outcome.reports]
+            task_count = len(batched_outcome.reports)
+            cookie_refresh_count = batched_outcome.credential_refresh_count
         _log(
             "[INFO] 手动批量抓取结束："
             f"成功 {crawl_report.success_count} 条，失败 {crawl_report.failed_count} 条，剩余 {crawl_report.remaining_count} 条。"
@@ -395,6 +458,9 @@ def run_manual_realtime_batch_crawl(
             filtered_csv_path=filtered_csv_path.as_posix(),
             wrapper_log_path=wrapper_log_path.as_posix() if wrapper_log_path is not None else None,
             crawl_report=crawl_report,
+            crawl_reports=crawl_reports_payload,
+            task_count=task_count,
+            cookie_refresh_count=cookie_refresh_count,
             started_at=task_started_at,
             finished_at=datetime.now(),
         )

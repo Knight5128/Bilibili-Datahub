@@ -14,6 +14,7 @@ from bili_pipeline.crawl_api import DEFAULT_VIDEO_DATA_OUTPUT_DIR, crawl_bvid_li
 from bili_pipeline.models import BatchCrawlReport, CrawlTaskMode, GCPStorageConfig, MediaDownloadStrategy
 from bili_pipeline.utils.file_merge import export_dataframe
 
+from .background_tasks import run_batched_crawl_from_csv
 from .shared import save_timestamped_task_log
 
 
@@ -172,6 +173,7 @@ class ManualMediaCrawlResult:
     waitlist_path: str | None = None
     task_count: int = 0
     sleep_count: int = 0
+    cookie_refresh_count: int = 0
     stop_category: str = ""
     stop_reason: str = ""
     wrapper_log_paths: list[str] = field(default_factory=list)
@@ -195,6 +197,7 @@ class ManualMediaCrawlResult:
             "waitlist_path": self.waitlist_path,
             "task_count": self.task_count,
             "sleep_count": self.sleep_count,
+            "cookie_refresh_count": self.cookie_refresh_count,
             "stop_category": self.stop_category,
             "stop_reason": self.stop_reason,
             "wrapper_log_paths": self.wrapper_log_paths,
@@ -259,6 +262,8 @@ def run_manual_media_mode_a(
     comment_limit: int = 10,
     consecutive_failure_limit: int = 10,
     credential: Any | None = None,
+    credential_provider: Any | None = None,
+    cookie_refresh_batch_size: int = 100,
     media_strategy: MediaDownloadStrategy | None = None,
     max_height: int = 1080,
     chunk_size_mb: int = 4,
@@ -276,6 +281,7 @@ def run_manual_media_mode_a(
     overall_started_at = started_at or datetime.now()
     task_count = 0
     sleep_count = 0
+    cookie_refresh_count = 0
     all_reports: list[dict[str, Any]] = []
     wrapper_log_paths: list[str] = []
     last_session_dir: Path | None = None
@@ -323,32 +329,59 @@ def run_manual_media_mode_a(
                 waitlist_path=waitlist_path.as_posix(),
                 task_count=task_count,
                 sleep_count=sleep_count,
+                cookie_refresh_count=cookie_refresh_count,
                 wrapper_log_paths=wrapper_log_paths,
                 crawl_reports=all_reports,
                 started_at=overall_started_at.isoformat(timespec="seconds"),
                 finished_at=datetime.now().isoformat(timespec="seconds"),
             )
 
-        crawl_report = crawl_bvid_list_from_csv(
-            input_csv_path,
-            parallelism=int(parallelism),
-            enable_media=True,
-            task_mode=CrawlTaskMode.ONCE_ONLY,
-            comment_limit=int(comment_limit),
-            consecutive_failure_limit=int(consecutive_failure_limit),
-            gcp_config=gcp_config,
-            max_height=max_height,
-            chunk_size_mb=chunk_size_mb,
-            media_strategy=media_strategy,
-            credential=credential,
-            output_root_dir=root_dir,
-            source_csv_name=input_csv_path.name,
-            session_dir=session_dir,
-        )
-        task_count += 1
+        if credential_provider is None:
+            crawl_report = crawl_bvid_list_from_csv(
+                input_csv_path,
+                parallelism=int(parallelism),
+                enable_media=True,
+                task_mode=CrawlTaskMode.ONCE_ONLY,
+                comment_limit=int(comment_limit),
+                consecutive_failure_limit=int(consecutive_failure_limit),
+                gcp_config=gcp_config,
+                max_height=max_height,
+                chunk_size_mb=chunk_size_mb,
+                media_strategy=media_strategy,
+                credential=credential,
+                output_root_dir=root_dir,
+                source_csv_name=input_csv_path.name,
+                session_dir=session_dir,
+            )
+            batched_refresh_count = 0
+            batched_reports = [crawl_report]
+        else:
+            batched_outcome = run_batched_crawl_from_csv(
+                input_csv_path,
+                batch_size=int(cookie_refresh_batch_size),
+                crawl_fn=crawl_bvid_list_from_csv,
+                credential_provider=credential_provider,
+                parallelism=int(parallelism),
+                enable_media=True,
+                task_mode=CrawlTaskMode.ONCE_ONLY,
+                comment_limit=int(comment_limit),
+                consecutive_failure_limit=int(consecutive_failure_limit),
+                gcp_config=gcp_config,
+                max_height=max_height,
+                chunk_size_mb=chunk_size_mb,
+                media_strategy=media_strategy,
+                output_root_dir=root_dir,
+                session_dir=session_dir,
+                should_retry_remaining_fn=lambda report: _classify_report(report) == "risk",
+            )
+            batched_reports = batched_outcome.reports
+            batched_refresh_count = batched_outcome.credential_refresh_count
+            crawl_report = batched_reports[-1]
+        cookie_refresh_count += batched_refresh_count
+        task_count += len(batched_reports)
         last_stop_category = _classify_report(crawl_report)
         last_stop_reason = str(getattr(crawl_report, "stop_reason", "") or "").strip()
-        all_reports.append(crawl_report.to_dict())
+        all_reports.extend(report.to_dict() for report in batched_reports)
         sync_result = sync_manual_media_waitlist(
             store=store,
             gcp_config=gcp_config,
@@ -380,10 +413,11 @@ def run_manual_media_mode_a(
                     "submitted_bvid_count": int(len(input_df)),
                     "task_count": task_count,
                     "sleep_count": sleep_count,
+                    "cookie_refresh_count": cookie_refresh_count,
                     "started_at": overall_started_at.isoformat(timespec="seconds"),
                     "finished_at": datetime.now().isoformat(timespec="seconds"),
                     "crawl_report": crawl_report.to_dict(),
-                        "sync_result": _to_serializable_dict(sync_result),
+                    "sync_result": _to_serializable_dict(sync_result),
                 },
             )
             wrapper_log_path = save_timestamped_task_log("manual_media_mode_A", logs, log_dir=session_dir / "logs")
@@ -406,6 +440,7 @@ def run_manual_media_mode_a(
                 "submitted_bvid_count": int(len(input_df)),
                 "task_count": task_count,
                 "sleep_count": sleep_count,
+                "cookie_refresh_count": cookie_refresh_count,
                 "started_at": overall_started_at.isoformat(timespec="seconds"),
                 "finished_at": datetime.now().isoformat(timespec="seconds"),
                 "crawl_report": crawl_report.to_dict(),
@@ -425,6 +460,7 @@ def run_manual_media_mode_a(
             waitlist_path=waitlist_path.as_posix(),
             task_count=task_count,
             sleep_count=sleep_count,
+            cookie_refresh_count=cookie_refresh_count,
             stop_category=last_stop_category,
             stop_reason=last_stop_reason,
             wrapper_log_paths=wrapper_log_paths,
@@ -448,6 +484,8 @@ def run_manual_media_mode_b(
     comment_limit: int = 10,
     consecutive_failure_limit: int = 10,
     credential: Any | None = None,
+    credential_provider: Any | None = None,
+    cookie_refresh_batch_size: int = 100,
     media_strategy: MediaDownloadStrategy | None = None,
     max_height: int = 1080,
     chunk_size_mb: int = 4,
@@ -516,30 +554,55 @@ def run_manual_media_mode_b(
     current_csv_path = Path(filtered_csv_path)
     task_count = 0
     sleep_count = 0
+    cookie_refresh_count = 0
     stop_category = ""
     stop_reason = ""
     all_reports: list[dict[str, Any]] = []
     while True:
-        crawl_report = crawl_bvid_list_from_csv(
-            current_csv_path,
-            parallelism=int(parallelism),
-            enable_media=True,
-            task_mode=CrawlTaskMode.ONCE_ONLY,
-            comment_limit=int(comment_limit),
-            consecutive_failure_limit=int(consecutive_failure_limit),
-            gcp_config=gcp_config,
-            max_height=max_height,
-            chunk_size_mb=chunk_size_mb,
-            media_strategy=media_strategy,
-            credential=credential,
-            output_root_dir=root_dir,
-            source_csv_name=current_csv_path.name,
-            session_dir=session_dir,
-        )
-        task_count += 1
+        if credential_provider is None:
+            crawl_report = crawl_bvid_list_from_csv(
+                current_csv_path,
+                parallelism=int(parallelism),
+                enable_media=True,
+                task_mode=CrawlTaskMode.ONCE_ONLY,
+                comment_limit=int(comment_limit),
+                consecutive_failure_limit=int(consecutive_failure_limit),
+                gcp_config=gcp_config,
+                max_height=max_height,
+                chunk_size_mb=chunk_size_mb,
+                media_strategy=media_strategy,
+                credential=credential,
+                output_root_dir=root_dir,
+                source_csv_name=current_csv_path.name,
+                session_dir=session_dir,
+            )
+            batched_reports = [crawl_report]
+        else:
+            batched_outcome = run_batched_crawl_from_csv(
+                current_csv_path,
+                batch_size=int(cookie_refresh_batch_size),
+                crawl_fn=crawl_bvid_list_from_csv,
+                credential_provider=credential_provider,
+                parallelism=int(parallelism),
+                enable_media=True,
+                task_mode=CrawlTaskMode.ONCE_ONLY,
+                comment_limit=int(comment_limit),
+                consecutive_failure_limit=int(consecutive_failure_limit),
+                gcp_config=gcp_config,
+                max_height=max_height,
+                chunk_size_mb=chunk_size_mb,
+                media_strategy=media_strategy,
+                output_root_dir=root_dir,
+                session_dir=session_dir,
+                should_retry_remaining_fn=lambda report: _classify_report(report) == "risk",
+            )
+            batched_reports = batched_outcome.reports
+            cookie_refresh_count += batched_outcome.credential_refresh_count
+            crawl_report = batched_reports[-1]
+        task_count += len(batched_reports)
         stop_category = _classify_report(crawl_report)
         stop_reason = str(getattr(crawl_report, "stop_reason", "") or "").strip()
-        all_reports.append(crawl_report.to_dict())
+        all_reports.extend(report.to_dict() for report in batched_reports)
         _log(
             f"[INFO] Mode B part_{task_count} 完成：成功 {getattr(crawl_report, 'success_count', 0)} 条，"
             f"失败 {getattr(crawl_report, 'failed_count', 0)} 条，剩余 {getattr(crawl_report, 'remaining_count', 0)} 条。"
@@ -570,6 +633,7 @@ def run_manual_media_mode_b(
             "uploaded_names": list(uploaded_names),
             "task_count": task_count,
             "sleep_count": sleep_count,
+            "cookie_refresh_count": cookie_refresh_count,
             "started_at": overall_started_at.isoformat(timespec="seconds"),
             "finished_at": datetime.now().isoformat(timespec="seconds"),
             "crawl_reports": all_reports,
@@ -589,6 +653,7 @@ def run_manual_media_mode_b(
         filtered_csv_path=filtered_csv_path.as_posix(),
         task_count=task_count,
         sleep_count=sleep_count,
+        cookie_refresh_count=cookie_refresh_count,
         stop_category=stop_category,
         stop_reason=stop_reason,
         wrapper_log_paths=[wrapper_log_path.as_posix()] if wrapper_log_path is not None else [],

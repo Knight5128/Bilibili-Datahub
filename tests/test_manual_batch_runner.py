@@ -9,7 +9,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 
 def _install_google_stubs() -> None:
@@ -483,6 +483,54 @@ class ManualBatchRunnerTest(unittest.TestCase):
                 )
 
             self.assertIn("至少选择", str(ctx.exception))
+
+    @patch("bili_pipeline.datahub.manual_batch_runner.run_batched_crawl_from_csv")
+    def test_run_manual_realtime_batch_crawl_uses_cookie_provider_batches_when_configured(self, mock_batched: Mock) -> None:
+        mock_batched.return_value = SimpleNamespace(
+            reports=[
+                SimpleNamespace(
+                    success_count=1,
+                    failed_count=0,
+                    remaining_count=0,
+                    completed_all=True,
+                    to_dict=lambda: {"completed_all": True},
+                )
+            ],
+            credential_refresh_count=2,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "video_pool"
+            manual_root = Path(tmp_dir) / "video_data" / "manual_crawls"
+            floorings_dir = root / "full_site_floorings"
+            floorings_dir.mkdir(parents=True)
+            (floorings_dir / "custom_flooring-20260329_120000.csv").write_text(
+                "bvid,pubdate,title\nBV_ONLY,2026-03-28T12:00:00,flooring-only\n",
+                encoding="utf-8-sig",
+            )
+            provider = MagicMock(return_value=object())
+
+            result = run_manual_realtime_batch_crawl(
+                gcp_config=GCPStorageConfig(project_id="p", bigquery_dataset="d", gcs_bucket_name="b"),
+                stream_data_time_window_hours=72,
+                parallelism=1,
+                comment_limit=10,
+                consecutive_failure_limit=10,
+                video_pool_root=root,
+                manual_crawls_root_dir=manual_root,
+                selected_flooring_csvs=["custom_flooring-20260329_120000.csv"],
+                selected_uid_task_dirs=[],
+                started_at=datetime(2026, 3, 29, 12, 0, 0),
+                credential_provider=provider,
+                cookie_refresh_batch_size=50,
+            )
+
+            self.assertEqual("completed", result.status)
+            self.assertEqual(1, result.task_count)
+            self.assertEqual(2, result.cookie_refresh_count)
+            _, kwargs = mock_batched.call_args
+            self.assertIs(kwargs["credential_provider"], provider)
+            self.assertEqual(50, kwargs["batch_size"])
 
 
 if __name__ == "__main__":

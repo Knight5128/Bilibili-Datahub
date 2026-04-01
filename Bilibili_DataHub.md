@@ -9,8 +9,8 @@
 - **作者数据洞察与精简**：可上传作者列表并抓取 `MetaResult` 级作者字段（如昵称、签名、性别、等级、认证状态、会员类型、粉丝数、关注数、公开视频数），支持在连续风控报错达到阈值后自动暂停、导出 `remaining_authors_part_n.csv` 供后续续跑；抓取任务结束时只落盘累计扩充结果，后续需由用户手动上传完整作者清单并点击按钮，才会生成完整汇总、可视化图表与分层精简结果。
 - **CSV/XLSX 文件拼接及去重**：可对多个本地导出结果统一排序、拼接，并按指定键去重。
 - **数据抓取调试**：继续支持单 `bvid` 全流程抓取、四类接口调试，以及 BigQuery / GCS 数据查看与媒体文件回读导出。
-- **手动批量抓取-动态数据**：在本页直接多选 `outputs/video_pool/full_site_floorings/` 下的一个或多个现成视频列表 CSV，并可选叠加一个或多个 `uid_expansion` 任务目录中的 `videolist_part_*.csv`；系统会将这些来源合并后按「追踪窗口」筛选、去重，再只抓取评论/互动量等实时数据并上传至 BigQuery。
-- **手动批量抓取-媒体/元数据**：支持两种补抓模式。模式 A 会基于当前 BigQuery Dataset 中“已存在动态数据、但尚未同时具备 `videos` 元数据记录与 `assets` 中视频轨/音频轨记录”的视频，维护待补清单并按清单抓取；模式 B 支持用户手动上传一个或多个包含 `bvid` 列的文件，先拼接去重、再剔除当前 Dataset 中已完成媒体/元数据的视频后抓取。
+- **手动批量抓取-动态数据**：在本页直接多选 `outputs/video_pool/full_site_floorings/` 下的一个或多个现成视频列表 CSV，并可选叠加一个或多个 `uid_expansion` 任务目录中的 `videolist_part_*.csv`；系统会将这些来源合并后按「追踪窗口」筛选、去重，再通过**后台子进程任务**抓取评论/互动量等实时数据并上传至 BigQuery。
+- **手动批量抓取-媒体/元数据**：支持两种补抓模式。模式 A 会基于当前 BigQuery Dataset 中“已存在动态数据、但尚未同时具备 `videos` 元数据记录与 `assets` 中视频轨/音频轨记录”的视频，维护待补清单并按清单抓取；模式 B 支持用户手动上传一个或多个包含 `bvid` 列的文件，先拼接去重、再剔除当前 Dataset 中已完成媒体/元数据的视频后抓取。两种模式现在同样支持**后台子进程任务**。
 - **本地自动批量抓取**：在前端中可手动触发一轮“最新排行榜视频列表 + 作者源最新视频列表 + 实时评论/互动量抓取”；同样的逻辑也可通过统一脚本入口执行。
 - **待补元数据/媒体清单**：自动批量抓取阶段发现的新视频会同步进入 `tracker_meta_media_queue` 对应的待补队列；后续既可在“自动批量抓取”页直接消化，也可在“手动批量抓取-媒体/元数据”页按 Dataset 缺口或手动上传清单集中补抓。
 - **作者源管理**：在前端上传包含 `owner_mid` 列的 CSV，可直接替换自动批量抓取所使用的作者列表。
@@ -59,7 +59,7 @@ python scripts/scheduled_discovery_daemon.py --tracking_ups_path tracking_ups_v1
   - **快捷跳转**：打开视频页或作者主页。
   - **tid 与分区名称对应**：查询分区映射。
 
-- Google Cloud 配置和自动批量抓取配置会分别保存在本地 `.local/` 下的 DataHub 配置文件中；B 站 Cookie 仍只保存在当前会话内存中。
+- Google Cloud 配置和自动批量抓取配置会分别保存在本地 `.local/` 下的 DataHub 配置文件中；B 站 Cookie 现在也可由用户显式保存到本地 `.local/bilibili-datahub.cookie.txt`，供后台任务读取与热更新。
 
 ### 从 GitHub clone 到本地成功运行 DataHub
 
@@ -324,9 +324,11 @@ $env:BILI_BUVID3 = "your-buvid3"
 
 - 本页只抓取**实时数据**（评论快照、互动量快照），不处理元数据与媒体。
 - **输入**：用户在页内显式选择的 `full_site_floorings` 视频列表 CSV，以及可选的 `uid_expansion` 任务目录；系统会读取所选任务目录下的 `videolist_part_*.csv`。不再在本页维护作者 CSV，也不再自动附加最新 `daily_hot` / `rankboard`。
-- **每轮流程（概要）**：读取所选 `full_site_floorings` 视频列表 CSV → 读取所选 `uid_expansion` 任务目录中的 `videolist_part_*.csv` → 合并候选视频 → 按本轮启动时刻与「追踪窗口」过滤发布时间 → 去重 → 生成本轮抓取清单并调用与批量实时模式相同的入库逻辑。
+- **每轮流程（概要）**：读取所选 `full_site_floorings` 视频列表 CSV → 读取所选 `uid_expansion` 任务目录中的 `videolist_part_*.csv` → 合并候选视频 → 按本轮启动时刻与「追踪窗口」过滤发布时间 → 去重 → 启动后台任务并生成本轮抓取清单 → 后台批次抓取实时数据并入库。
 - **窗口裁剪说明**：无有效 `pubdate` 的条目不会进入或留在当前有效 watchlist 中。
-- **每轮会话目录** `manual_crawl_stat_comment_<时间戳>/` 中会保存 `filtered_video_list.csv`、`manual_crawl_state.json` 与 `logs/`；若底层批量任务部分失败，同目录下还会保留剩余 CSV 供继续执行。
+- **后台执行说明**：页面重跑或关闭浏览器页签后，只要 `streamlit` 进程仍在，后台任务会继续执行；页面重新打开后可在页内读取最近登记的后台任务状态。
+- **cookie 热更新说明**：后台任务不会在每个 `bvid` 前都重读 cookie，而是按批次读取 `.local/bilibili-datahub.cookie.txt`；每批开始前刷新一次 `Credential`，并在批内出现疑似登录态/风控导致的剩余 CSV 时，直接用最新 cookie 继续处理后续批次。
+- **每轮会话目录** `manual_crawl_stat_comment_<时间戳>/` 中会保存 `filtered_video_list.csv`、`manual_crawl_state.json` 与 `logs/`；若底层批量任务部分失败，同目录下还会保留剩余 CSV 供继续执行。后台任务层另外会在 `outputs/video_data/background_tasks/` 下保存任务配置与状态文件。
 - **风控睡眠说明**：发现阶段若识别为风控错误，会按当前设置持续睡眠后重试，直到成功或被用户手动中断；非风控错误则直接中止本轮任务。
 
 ### 手动批量抓取-媒体/元数据说明
@@ -338,13 +340,13 @@ $env:BILI_BUVID3 = "your-buvid3"
     - 已完成集：同时存在于 `videos` 表，且 `assets` 表中同时具有 `asset_type=video` 与 `asset_type=audio` 的视频；
     - 待补集：候选集减已完成集。
   - 同步结果会写到 `outputs/video_data/manual_crawls/manual_crawl_media_waitlist_<DatasetName>.csv`。
-  - 点击 `按清单抓取媒体/元数据` 后，每次都会新建独立任务目录 `manual_crawl_media_mode_A_<date>_<time>/`，并按当前 waitlist 抓取。
+  - 点击 `按清单抓取媒体/元数据` 后，会启动一个后台任务；真正执行时仍会新建独立任务目录 `manual_crawl_media_mode_A_<date>_<time>/`，并按当前 waitlist 抓取。
   - 若遇到风控，当前任务目录会直接留档；如启用了睡眠机制，则等待指定分钟数后再开启一个新的 Mode A 任务目录继续抓取。若遇到 `WinError`，则直接停止并保留结果。
 - **模式 B：基于手动上传清单**
   - 可上传一个或多个包含 `bvid` 列的 CSV/XLSX 文件。
-  - 点击 `去重并抓取` 后，会新建 `manual_crawl_media_mode_B_<date>_<time>/` 目录，先拼接去重，再剔除当前 Dataset 中已经同时具备 `videos` 与 `assets(video+audio)` 的视频。
+  - 点击 `去重并抓取` 后，会先把上传文件保存到后台任务目录，再在真正执行时新建 `manual_crawl_media_mode_B_<date>_<time>/` 目录，先拼接去重，再剔除当前 Dataset 中已经同时具备 `videos` 与 `assets(video+audio)` 的视频。
   - 若触发风控，系统会把剩余待抓视频清单保存在当前任务目录中，睡眠后继续在同一任务目录内追加下一 part；若遇到 `WinError`，则直接停止。
-- 两种模式都会保留任务级状态文件、批量抓取状态文件和日志文件，便于中断后排查与续跑。
+- 两种模式都会保留任务级状态文件、批量抓取状态文件和日志文件，便于中断后排查与续跑；后台任务层另外会保留最近登记的任务状态，供前端刷新查看。
 
 ### 常驻脚本说明
 

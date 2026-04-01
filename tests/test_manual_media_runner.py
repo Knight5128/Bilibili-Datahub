@@ -8,7 +8,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pandas as pd
 
@@ -206,6 +206,42 @@ class ManualMediaRunnerTest(unittest.TestCase):
         self.assertEqual("risk", classify_manual_media_error_text("状态码 412，触发风控"))
         self.assertEqual("winerror", classify_manual_media_error_text("[WinError 1450] Insufficient system resources"))
         self.assertEqual("other", classify_manual_media_error_text("plain runtime error"))
+
+    @patch("bili_pipeline.datahub.manual_media_runner.run_batched_crawl_from_csv")
+    def test_run_manual_media_mode_b_uses_cookie_provider_batches_when_configured(self, mock_batched: Mock) -> None:
+        mock_batched.return_value = SimpleNamespace(
+            reports=[
+                _FakeReport(
+                    success_count=1,
+                    failed_count=0,
+                    remaining_count=0,
+                    completed_all=True,
+                    stop_reason="done",
+                    summaries=[],
+                )
+            ],
+            credential_refresh_count=3,
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = _FakeStore(completed_bvids=set())
+            provider = MagicMock(return_value=object())
+            result = run_manual_media_mode_b(
+                uploaded_frames=[pd.DataFrame([{"bvid": "BV_TODO"}])],
+                uploaded_names=["a.csv"],
+                store=store,
+                gcp_config=GCPStorageConfig(project_id="p", bigquery_dataset="demo_ds", gcs_bucket_name="bucket"),
+                manual_crawls_root_dir=tmp_dir,
+                started_at=datetime(2026, 3, 31, 12, 0, 0),
+                credential_provider=provider,
+                cookie_refresh_batch_size=25,
+            )
+
+            self.assertEqual("completed", result.status)
+            self.assertEqual(1, result.task_count)
+            self.assertEqual(3, result.cookie_refresh_count)
+            _, kwargs = mock_batched.call_args
+            self.assertIs(kwargs["credential_provider"], provider)
+            self.assertEqual(25, kwargs["batch_size"])
 
 
 if __name__ == "__main__":

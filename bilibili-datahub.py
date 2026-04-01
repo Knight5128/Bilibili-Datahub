@@ -51,6 +51,20 @@ from bili_pipeline.datahub.author_refinement import (
     save_remaining_author_csv,
     sample_authors_with_priority_rules,
 )
+from bili_pipeline.datahub.background_tasks import (
+    DEFAULT_BACKGROUND_TASKS_ROOT,
+    DEFAULT_COOKIE_PATH,
+    background_task_is_running,
+    create_background_task_dir,
+    launch_background_worker,
+    load_active_background_task,
+    load_background_task_status,
+    load_cookie_text,
+    register_active_background_task,
+    save_cookie_text,
+    update_background_task_status,
+    write_background_task_config,
+)
 from bili_pipeline.datahub.discover_ops import (
     BVID_TO_UIDS_OUTPUT_DIR,
     DEFAULT_UID_EXPANSION_START_DATE,
@@ -140,6 +154,8 @@ from bili_pipeline.utils.streamlit_night_sky import render_night_sky_background
 APP_DIR = Path(__file__).resolve().parent
 LOGO_PATH = APP_DIR / "assets" / "logos" / "bvd-crawler.png"
 FIELD_REFERENCE_DOC_PATH = APP_DIR / FIELD_REFERENCE_DOC_NAME
+COOKIE_FILE_PATH = (APP_DIR / DEFAULT_COOKIE_PATH).resolve()
+BACKGROUND_TASKS_ROOT = (APP_DIR / DEFAULT_BACKGROUND_TASKS_ROOT).resolve()
 
 
 def _inject_field_reference_panel_styles() -> None:
@@ -430,6 +446,72 @@ def _build_default_log_dir(prefix: str, started_at: datetime) -> Path:
     return TEST_CRAWLS_OUTPUT_DIR / f"{prefix}_{started_at.strftime('%Y%m%d_%H%M%S')}"
 
 
+def _load_registered_background_task(scope: str) -> tuple[dict[str, object] | None, dict[str, object] | None]:
+    registry_payload = load_active_background_task(scope, registry_root=BACKGROUND_TASKS_ROOT)
+    if not registry_payload or not registry_payload.get("task_dir"):
+        return None, None
+    task_dir = Path(str(registry_payload["task_dir"]))
+    if not task_dir.exists():
+        return registry_payload, None
+    return registry_payload, load_background_task_status(task_dir)
+
+
+def _render_background_task_status(scope: str, title: str) -> None:
+    registry_payload, status_payload = _load_registered_background_task(scope)
+    st.markdown(f"**{title}**")
+    if registry_payload is None:
+        st.caption("当前尚无已登记的后台任务。")
+        return
+    task_dir = Path(str(registry_payload.get("task_dir") or ""))
+    st.caption(f"最近任务目录：`{display_path(task_dir, APP_DIR)}`")
+    if status_payload:
+        st.json(status_payload)
+    else:
+        st.caption("任务状态文件尚未生成。")
+
+
+def _launch_datahub_background_task(*, scope: str, task_kind: str, gcp_payload: dict[str, object], payload: dict[str, object]) -> Path:
+    if background_task_is_running(scope, registry_root=BACKGROUND_TASKS_ROOT):
+        raise ValueError("当前已有同类后台任务仍在运行，请先等待其完成。")
+    task_dir = create_background_task_dir(task_kind, root_dir=BACKGROUND_TASKS_ROOT)
+    write_background_task_config(
+        task_dir,
+        {
+            "scope": scope,
+            "task_kind": task_kind,
+            "task_dir": str(task_dir),
+            "gcp_payload": gcp_payload,
+            "cookie_path": str(COOKIE_FILE_PATH),
+            "cookie_refresh_batch_size": 100,
+            "payload": payload,
+        },
+    )
+    update_background_task_status(
+        task_dir,
+        {
+            "status": "queued",
+            "scope": scope,
+            "task_kind": task_kind,
+            "task_dir": str(task_dir),
+            "created_at": datetime.now().isoformat(),
+        },
+    )
+    pid = launch_background_worker(task_dir)
+    register_active_background_task(scope, task_dir=task_dir, registry_root=BACKGROUND_TASKS_ROOT, pid=pid)
+    update_background_task_status(
+        task_dir,
+        {
+            "status": "queued",
+            "scope": scope,
+            "task_kind": task_kind,
+            "task_dir": str(task_dir),
+            "created_at": datetime.now().isoformat(),
+            "pid": pid,
+        },
+    )
+    return task_dir
+
+
 page_config = {"page_title": "Bilibili DataHub", "layout": "wide"}
 if LOGO_PATH.exists():
     page_config["page_icon"] = str(LOGO_PATH)
@@ -445,6 +527,8 @@ st.markdown(
 
 gcp_defaults = _load_gcp_form_defaults()
 auto_defaults = _load_auto_form_defaults()
+if "datahub_cookie_text" not in st.session_state:
+    st.session_state["datahub_cookie_text"] = load_cookie_text(COOKIE_FILE_PATH)
 
 with st.sidebar:
     st.subheader("全局设置")
@@ -452,7 +536,9 @@ with st.sidebar:
     chunk_size_mb = st.number_input("媒体分块大小（MB）", min_value=1, max_value=64, value=4, step=1)
     max_height = st.number_input("媒体最大分辨率（高度）", min_value=360, max_value=2160, value=1080, step=120)
     consecutive_failure_limit = st.number_input("手动批量抓取连续失败暂停阈值", min_value=1, max_value=100, value=10, step=1)
-    cookie_text = st.text_area("可选：B 站 Cookie（仅当前会话）", value="", height=80)
+    cookie_text = st.text_area("可选：B 站 Cookie（可保存到本地，供后台任务热更新读取）", key="datahub_cookie_text", height=80)
+    trigger_save_cookie = st.button("保存 / 更新 Cookie", width="stretch")
+    st.caption(f"Cookie 文件：`{display_path(COOKIE_FILE_PATH, APP_DIR)}`")
     st.divider()
     st.subheader("Google Cloud 配置")
     with st.form("sidebar_gcp_config_form"):
@@ -510,6 +596,9 @@ if trigger_save_auto_config:
     saved_path = save_json_config(LOCAL_AUTO_CONFIG_PATH, auto_payload)
     st.session_state.pop("datahub_auto_status_snapshot", None)
     st.sidebar.success(f"自动批量抓取配置已保存：{saved_path}")
+if trigger_save_cookie:
+    saved_path = save_cookie_text(cookie_text, path=COOKIE_FILE_PATH)
+    st.sidebar.success(f"Cookie 已保存：{saved_path}")
 
 active_credential = build_credential_from_cookie(cookie_text)
 active_gcp_config = build_gcp_config(gcp_payload)
@@ -1365,8 +1454,9 @@ with tab_manual_batch:
     st.caption(
         "本页不再维护本地作者清单。请直接选择 `full_site_floorings` 下的一个或多个视频列表 CSV，"
         "以及可选的一个或多个 `uid_expansions` 任务目录，"
-        "完成追踪窗口裁剪与去重后，先在新的 `manual_crawl_stat_comment_*` 任务目录中留存待抓 CSV，再直接抓取评论/互动量数据。"
+        "完成追踪窗口裁剪与去重后，后台任务会在新的 `manual_crawl_stat_comment_*` 任务目录中留存待抓 CSV，再继续抓取评论/互动量数据。"
     )
+    _render_background_task_status("manual_dynamic_batch", "当前后台任务状态")
 
     video_pool_root = _manual_stat_comment_video_pool_root()
     manual_crawls_dir = _manual_stat_comment_crawls_root()
@@ -1422,42 +1512,36 @@ with tab_manual_batch:
             step=1,
             key="manual_batch_parallelism",
         )
-        trigger_manual_batch = st.form_submit_button("开始手动批量抓取-动态数据", width="stretch")
+        trigger_manual_batch = st.form_submit_button("启动后台任务：手动批量抓取-动态数据", width="stretch")
 
     if trigger_manual_batch:
         try:
             if not active_gcp_config.is_enabled():
                 raise ValueError("请先完成 GCP 配置。")
-            result = run_manual_realtime_batch_crawl(
-                gcp_config=active_gcp_config,
-                stream_data_time_window_hours=int(time_window_hours),
-                parallelism=int(parallelism),
-                comment_limit=int(comment_limit_default),
-                consecutive_failure_limit=int(consecutive_failure_limit),
-                max_height=int(max_height),
-                chunk_size_mb=int(chunk_size_mb),
-                media_strategy=active_media_strategy,
-                credential=active_credential,
-                video_pool_root=video_pool_root,
-                manual_crawls_root_dir=manual_crawls_dir,
-                selected_flooring_csvs=selected_flooring_csvs,
-                selected_uid_task_dirs=selected_uid_task_dirs,
+            save_cookie_text(cookie_text, path=COOKIE_FILE_PATH)
+            task_dir = _launch_datahub_background_task(
+                scope="manual_dynamic_batch",
+                task_kind="manual_dynamic_batch",
+                gcp_payload=gcp_payload,
+                payload={
+                    "stream_data_time_window_hours": int(time_window_hours),
+                    "parallelism": int(parallelism),
+                    "comment_limit": int(comment_limit_default),
+                    "consecutive_failure_limit": int(consecutive_failure_limit),
+                    "max_height": int(max_height),
+                    "chunk_size_mb": int(chunk_size_mb),
+                    "video_pool_root": str(video_pool_root),
+                    "manual_crawls_root_dir": str(manual_crawls_dir),
+                    "selected_flooring_csvs": list(selected_flooring_csvs),
+                    "selected_uid_task_dirs": list(selected_uid_task_dirs),
+                },
             )
         except ValueError as exc:
             st.error(f"手动批量抓取-动态数据失败：{exc}")
         except Exception as exc:  # noqa: BLE001
             st.error(f"手动批量抓取-动态数据失败：{exc}")
         else:
-            crawl = result.crawl_report
-            if result.status == "skipped":
-                st.info("本轮合并后没有待抓视频，已跳过实时抓取。")
-            elif crawl is None:
-                st.info("本轮未触发实时抓取。")
-            elif crawl.completed_all:
-                st.success("手动批量抓取-动态数据完成。")
-            else:
-                st.warning("手动批量抓取-动态数据已结束，但仍有部分视频失败并已保留剩余清单。")
-            _show_json("手动批量抓取-动态数据运行报告", result.to_dict())
+            st.success(f"后台任务已启动：`{display_path(task_dir, APP_DIR)}`")
 
 with tab_manual_media:
     st.subheader("手动批量抓取-媒体/元数据")
@@ -1467,6 +1551,7 @@ with tab_manual_media:
         "本页用于集中补抓视频元数据与媒体文件（视频轨 + 音频轨）。"
         "模式 A 基于数据集中的缺失条目维护待补清单，模式 B 基于用户手动上传的 `bvid` 清单去重后执行。"
     )
+    _render_background_task_status("manual_media", "当前后台任务状态")
     manual_media_waitlist_path = build_manual_media_waitlist_path(
         active_gcp_config.bigquery_dataset,
         manual_crawls_root_dir=MANUAL_MEDIA_CRAWLS_OUTPUT_DIR,
@@ -1501,7 +1586,7 @@ with tab_manual_media:
                     step=1,
                     key="manual_media_mode_a_sleep_minutes",
                 )
-                trigger_manual_media_mode_a = st.form_submit_button("按清单抓取媒体/元数据", width="stretch")
+                trigger_manual_media_mode_a = st.form_submit_button("启动后台任务：按清单抓取媒体/元数据", width="stretch")
         if trigger_manual_media_sync:
             try:
                 store = _resolve_store()
@@ -1523,33 +1608,28 @@ with tab_manual_media:
                 st.dataframe(current_waitlist_df.head(200), width="stretch", hide_index=True)
         if trigger_manual_media_mode_a:
             try:
-                store = _resolve_store()
-                report = run_manual_media_mode_a(
-                    store=store,
-                    gcp_config=active_gcp_config,
-                    manual_crawls_root_dir=MANUAL_MEDIA_CRAWLS_OUTPUT_DIR,
-                    enable_sleep_resume=bool(manual_media_mode_a_enable_sleep),
-                    sleep_minutes=int(manual_media_mode_a_sleep_minutes),
-                    parallelism=int(manual_media_mode_a_parallelism),
-                    comment_limit=int(comment_limit_default),
-                    consecutive_failure_limit=int(consecutive_failure_limit),
-                    credential=active_credential,
-                    media_strategy=active_media_strategy,
-                    max_height=int(max_height),
-                    chunk_size_mb=int(chunk_size_mb),
+                if not active_gcp_config.is_enabled():
+                    raise ValueError("请先完成 GCP 配置。")
+                save_cookie_text(cookie_text, path=COOKIE_FILE_PATH)
+                task_dir = _launch_datahub_background_task(
+                    scope="manual_media",
+                    task_kind="manual_media_mode_a",
+                    gcp_payload=gcp_payload,
+                    payload={
+                        "manual_crawls_root_dir": str(MANUAL_MEDIA_CRAWLS_OUTPUT_DIR),
+                        "enable_sleep_resume": bool(manual_media_mode_a_enable_sleep),
+                        "sleep_minutes": int(manual_media_mode_a_sleep_minutes),
+                        "parallelism": int(manual_media_mode_a_parallelism),
+                        "comment_limit": int(comment_limit_default),
+                        "consecutive_failure_limit": int(consecutive_failure_limit),
+                        "max_height": int(max_height),
+                        "chunk_size_mb": int(chunk_size_mb),
+                    },
                 )
             except Exception as exc:  # noqa: BLE001
                 st.error(f"模式 A 抓取失败：{exc}")
             else:
-                if report.status == "completed":
-                    st.success("模式 A 抓取完成。")
-                elif report.status == "partial":
-                    st.warning("模式 A 已结束，但仍有未完成条目；相关日志和剩余状态已留档。")
-                elif report.status == "failed":
-                    st.error("模式 A 因 WinError 或其它严重异常而停止；请查看任务目录日志。")
-                else:
-                    st.info("模式 A 当前没有可抓取的视频。")
-                _show_json("模式 A 运行报告", report.to_dict())
+                st.success(f"模式 A 后台任务已启动：`{display_path(task_dir, APP_DIR)}`")
 
     with mode_b_tab:
         manual_media_mode_b_uploads = st.file_uploader(
@@ -1578,41 +1658,76 @@ with tab_manual_media:
                 step=1,
                 key="manual_media_mode_b_sleep_minutes",
             )
-            trigger_manual_media_mode_b = st.form_submit_button("去重并抓取", width="stretch")
+            trigger_manual_media_mode_b = st.form_submit_button("启动后台任务：去重并抓取", width="stretch")
         if trigger_manual_media_mode_b:
             try:
                 if not manual_media_mode_b_uploads:
                     raise ValueError("请先上传至少一份包含 `bvid` 列的清单。")
-                store = _resolve_store()
-                uploaded_dfs = _read_uploaded_files(manual_media_mode_b_uploads)
-                report = run_manual_media_mode_b(
-                    uploaded_frames=uploaded_dfs,
-                    uploaded_names=[upload.name for upload in manual_media_mode_b_uploads],
-                    store=store,
-                    gcp_config=active_gcp_config,
-                    manual_crawls_root_dir=MANUAL_MEDIA_CRAWLS_OUTPUT_DIR,
-                    enable_sleep_resume=bool(manual_media_mode_b_enable_sleep),
-                    sleep_minutes=int(manual_media_mode_b_sleep_minutes),
-                    parallelism=int(manual_media_mode_b_parallelism),
-                    comment_limit=int(comment_limit_default),
-                    consecutive_failure_limit=int(consecutive_failure_limit),
-                    credential=active_credential,
-                    media_strategy=active_media_strategy,
-                    max_height=int(max_height),
-                    chunk_size_mb=int(chunk_size_mb),
+                if not active_gcp_config.is_enabled():
+                    raise ValueError("请先完成 GCP 配置。")
+                if background_task_is_running("manual_media", registry_root=BACKGROUND_TASKS_ROOT):
+                    raise ValueError("当前已有媒体/元数据后台任务仍在运行，请先等待其完成。")
+                save_cookie_text(cookie_text, path=COOKIE_FILE_PATH)
+                task_dir = create_background_task_dir("manual_media_mode_b", root_dir=BACKGROUND_TASKS_ROOT)
+                upload_dir = task_dir / "uploads"
+                upload_dir.mkdir(parents=True, exist_ok=True)
+                uploaded_file_paths: list[str] = []
+                uploaded_names: list[str] = []
+                for index, upload in enumerate(manual_media_mode_b_uploads, start=1):
+                    target_path = upload_dir / f"{index:02d}_{upload.name}"
+                    target_path.write_bytes(upload.getbuffer())
+                    uploaded_file_paths.append(str(target_path))
+                    uploaded_names.append(upload.name)
+                write_background_task_config(
+                    task_dir,
+                    {
+                        "scope": "manual_media",
+                        "task_kind": "manual_media_mode_b",
+                        "task_dir": str(task_dir),
+                        "gcp_payload": gcp_payload,
+                        "cookie_path": str(COOKIE_FILE_PATH),
+                        "cookie_refresh_batch_size": 100,
+                        "payload": {
+                            "manual_crawls_root_dir": str(MANUAL_MEDIA_CRAWLS_OUTPUT_DIR),
+                            "enable_sleep_resume": bool(manual_media_mode_b_enable_sleep),
+                            "sleep_minutes": int(manual_media_mode_b_sleep_minutes),
+                            "parallelism": int(manual_media_mode_b_parallelism),
+                            "comment_limit": int(comment_limit_default),
+                            "consecutive_failure_limit": int(consecutive_failure_limit),
+                            "max_height": int(max_height),
+                            "chunk_size_mb": int(chunk_size_mb),
+                            "uploaded_file_paths": uploaded_file_paths,
+                            "uploaded_names": uploaded_names,
+                        },
+                    },
+                )
+                update_background_task_status(
+                    task_dir,
+                    {
+                        "status": "queued",
+                        "scope": "manual_media",
+                        "task_kind": "manual_media_mode_b",
+                        "task_dir": str(task_dir),
+                        "created_at": datetime.now().isoformat(),
+                    },
+                )
+                pid = launch_background_worker(task_dir)
+                register_active_background_task("manual_media", task_dir=task_dir, registry_root=BACKGROUND_TASKS_ROOT, pid=pid)
+                update_background_task_status(
+                    task_dir,
+                    {
+                        "status": "queued",
+                        "scope": "manual_media",
+                        "task_kind": "manual_media_mode_b",
+                        "task_dir": str(task_dir),
+                        "created_at": datetime.now().isoformat(),
+                        "pid": pid,
+                    },
                 )
             except Exception as exc:  # noqa: BLE001
                 st.error(f"模式 B 抓取失败：{exc}")
             else:
-                if report.status == "completed":
-                    st.success("模式 B 抓取完成。")
-                elif report.status == "partial":
-                    st.warning("模式 B 已结束，但仍有未完成条目；剩余清单已保存在任务目录中。")
-                elif report.status == "failed":
-                    st.error("模式 B 因 WinError 或其它严重异常而停止；请查看任务目录日志。")
-                else:
-                    st.info("模式 B 当前没有需要抓取的视频。")
-                _show_json("模式 B 运行报告", report.to_dict())
+                st.success(f"模式 B 后台任务已启动：`{display_path(task_dir, APP_DIR)}`")
 
 with tab_db:
     st.subheader("BigQuery / GCS 数据查看")
