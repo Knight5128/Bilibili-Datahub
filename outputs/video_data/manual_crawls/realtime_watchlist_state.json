@@ -1,0 +1,11 @@
+{
+  "status": "failed",
+  "current_csv_path": "realtime_watchlist_current.csv",
+  "time_window_hours": 168,
+  "current_bvid_count": 4821,
+  "last_run_started_at": "2026-03-31T14:26:20.388689+00:00",
+  "last_run_finished_at": "2026-03-31T17:41:17.904809+00:00",
+  "last_run_session_dir": "D:\\Schoolworks\\Thesis\\Bilibili-Datahub\\outputs\\video_data\\manual_crawls\\manual_crawl_20260331_142620",
+  "last_run_status": "failed",
+  "updated_at": "2026-03-31T17:41:17.904809+00:00"
+}

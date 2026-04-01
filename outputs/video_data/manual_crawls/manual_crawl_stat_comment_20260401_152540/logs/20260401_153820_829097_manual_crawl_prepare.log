@@ -1,0 +1,8 @@
+[TIMESTAMP][BEGIN] 2026-04-01T15:38:20
+[2026-04-01 15:25:40] [INFO] 已发现 18 个可用于手动批量抓取的视频列表 CSV。
+[2026-04-01 15:27:41] [INFO] 去重后共得到 312282 个唯一 bvid 候选。
+[2026-04-01 15:27:41] [INFO] 发布时间窗口筛选完成：保留 17427 条，缺少 pubdate 跳过 0 条，超出窗口跳过 294855 条。
+[2026-04-01 15:27:42] [INFO] 已保存筛选后的视频列表：D:/Schoolworks/Thesis/Bilibili-Datahub/outputs/video_data/manual_crawls/manual_crawl_stat_comment_20260401_152540/filtered_video_list.csv
+[2026-04-01 15:27:42] [INFO] 开始执行手动批量抓取（仅实时互动量 / 评论数据）。
+[2026-04-01 15:38:20] [ERROR] 手动批量抓取失败：Timeout of 600.0s exceeded, last exception: HTTPSConnectionPool(host='oauth2.googleapis.com', port=443): Max retries exceeded with url: /token (Caused by ConnectTimeoutError(<HTTPSConnection(host='oauth2.googleapis.com', port=443) at 0x1fe6a9d2c20>, 'Connection to oauth2.googleapis.com timed out. (connect timeout=120)'))
+[TIMESTAMP][END] 2026-04-01T15:38:20

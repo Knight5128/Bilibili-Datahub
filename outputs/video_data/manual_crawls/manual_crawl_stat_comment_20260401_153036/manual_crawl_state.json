@@ -1,0 +1,17 @@
+{
+  "status": "failed",
+  "session_dir": "D:/Schoolworks/Thesis/Bilibili-Datahub/outputs/video_data/manual_crawls/manual_crawl_stat_comment_20260401_153036",
+  "state_path": "D:/Schoolworks/Thesis/Bilibili-Datahub/outputs/video_data/manual_crawls/manual_crawl_stat_comment_20260401_153036/manual_crawl_state.json",
+  "source_csv_count": 0,
+  "candidate_bvid_count": 0,
+  "filtered_bvid_count": 0,
+  "skipped_missing_pubdate_count": 0,
+  "skipped_outside_window_count": 0,
+  "stream_data_time_window_hours": 168,
+  "filtered_csv_path": null,
+  "wrapper_log_path": "D:/Schoolworks/Thesis/Bilibili-Datahub/outputs/video_data/manual_crawls/manual_crawl_stat_comment_20260401_153036/logs/20260401_154227_736834_manual_crawl_prepare.log",
+  "crawl_report": null,
+  "error": "Timeout of 600.0s exceeded, last exception: HTTPSConnectionPool(host='oauth2.googleapis.com', port=443): Max retries exceeded with url: /token (Caused by ConnectTimeoutError(<HTTPSConnection(host='oauth2.googleapis.com', port=443) at 0x1fe64ff3130>, 'Connection to oauth2.googleapis.com timed out. (connect timeout=120)'))",
+  "started_at": "2026-04-01T15:30:36.543085",
+  "finished_at": "2026-04-01T15:42:27.737821"
+}
