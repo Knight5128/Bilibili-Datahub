@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import subprocess
 import sys
 import tempfile
 import types
@@ -66,6 +67,7 @@ from bili_pipeline.datahub.background_tasks import (
     create_background_task_dir,
     finalize_background_task_status,
     is_background_task_process_running,
+    launch_background_worker,
     load_background_task_result,
     load_registered_background_task_status,
     load_background_task_status,
@@ -115,6 +117,20 @@ class DataHubBackgroundTasksTest(unittest.TestCase):
             )
             self.assertTrue(registry_path.exists())
             self.assertIn("manual_media", registry_path.name)
+
+    @unittest.skipIf(getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0) == 0, "Windows breakaway flag unavailable")
+    @patch("bili_pipeline.datahub.background_tasks.subprocess.Popen")
+    def test_launch_background_worker_uses_breakaway_flag_on_windows(self, mock_popen) -> None:
+        mock_popen.return_value = types.SimpleNamespace(pid=12345)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            task_dir = Path(tmp_dir) / "task"
+            pid = launch_background_worker(task_dir)
+
+        self.assertEqual(12345, pid)
+        creationflags = int(mock_popen.call_args.kwargs["creationflags"])
+        self.assertTrue(creationflags & getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        self.assertTrue(creationflags & getattr(subprocess, "DETACHED_PROCESS", 0))
+        self.assertTrue(creationflags & getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0))
 
     @patch("bili_pipeline.datahub.background_tasks.os.kill", side_effect=SystemError("kill failed"))
     def test_is_background_task_process_running_returns_false_when_os_kill_raises_systemerror(self, _mock_kill) -> None:

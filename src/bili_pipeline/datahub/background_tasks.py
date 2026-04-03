@@ -575,6 +575,7 @@ def launch_background_worker(task_dir: Path | str) -> int:
     if os.name == "nt":
         creationflags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         creationflags |= getattr(subprocess, "DETACHED_PROCESS", 0)
+        creationflags |= getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0)
     project_root = Path(__file__).resolve().parents[3]
     with stdout_path.open("a", encoding="utf-8") as stdout_handle, stderr_path.open("a", encoding="utf-8") as stderr_handle:
         process = subprocess.Popen(  # noqa: S603
