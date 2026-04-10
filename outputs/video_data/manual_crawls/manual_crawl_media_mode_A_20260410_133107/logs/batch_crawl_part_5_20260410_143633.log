@@ -1,0 +1,222 @@
+[TIMESTAMP][BEGIN] 2026-04-10T14:20:01
+[2026-04-10 14:20:03] 开始执行 CSV 批量抓取子任务 part_5。
+[2026-04-10 14:20:03] 子任务开始时间：2026-04-10T14:20:01.432411
+[2026-04-10 14:20:03] 输入文件：batch_input_5.csv
+[2026-04-10 14:20:03] 输入唯一 bvid 数量：100
+[2026-04-10 14:20:03] 为严格按 CSV 顺序判断连续失败阈值，本次任务自动将并发度从 2 调整为 1。
+[2026-04-10 14:20:11] [SUCCESS] bvid=BV175XeBxEVX 已成功抓取全部所需数据。
+[2026-04-10 14:20:24] [SUCCESS] bvid=BV176DeBDEBc 已成功抓取全部所需数据。
+[2026-04-10 14:20:32] [SUCCESS] bvid=BV176DeBDExW 已成功抓取全部所需数据。
+[2026-04-10 14:20:37] [SUCCESS] bvid=BV1779MBHE4Y 已成功抓取全部所需数据。
+[2026-04-10 14:20:44] [SUCCESS] bvid=BV177SSBZE4r 已成功抓取全部所需数据。
+[2026-04-10 14:20:50] [SUCCESS] bvid=BV177XeBWEtV 已成功抓取全部所需数据。
+[2026-04-10 14:20:55] [SUCCESS] bvid=BV178X6BzEFd 已成功抓取全部所需数据。
+[2026-04-10 14:21:01] [SUCCESS] bvid=BV178XMBJE1M 已成功抓取全部所需数据。
+[2026-04-10 14:21:12] [SUCCESS] bvid=BV178XMBJEmz 已成功抓取全部所需数据。
+[2026-04-10 14:21:20] [SUCCESS] bvid=BV1799PB3EwC 已成功抓取全部所需数据。
+[2026-04-10 14:21:27] [SUCCESS] bvid=BV179D6BKEAL 已成功抓取全部所需数据。
+[2026-04-10 14:21:36] [SUCCESS] bvid=BV179DhBLEdH 已成功抓取全部所需数据。
+[2026-04-10 14:21:47] [SUCCESS] bvid=BV17A93BbEgQ 已成功抓取全部所需数据。
+[2026-04-10 14:21:53] [SUCCESS] bvid=BV17A9FBfEM6 已成功抓取全部所需数据。
+[2026-04-10 14:22:00] [SUCCESS] bvid=BV17A9FBfEzR 已成功抓取全部所需数据。
+[2026-04-10 14:22:09] [SUCCESS] bvid=BV17AXNB3EKX 已成功抓取全部所需数据。
+[2026-04-10 14:22:29] [SUCCESS] bvid=BV17AXNB3Efm 已成功抓取全部所需数据。
+[2026-04-10 14:22:36] [SUCCESS] bvid=BV17AXUBcEGJ 已成功抓取全部所需数据。
+[2026-04-10 14:22:42] [SUCCESS] bvid=BV17BX5BMERr 已成功抓取全部所需数据。
+[2026-04-10 14:22:49] [SUCCESS] bvid=BV17BXGB8Epx 已成功抓取全部所需数据。
+[2026-04-10 14:22:56] [SUCCESS] bvid=BV17BXGB8Es3 已成功抓取全部所需数据。
+[2026-04-10 14:23:01] [SUCCESS] bvid=BV17BXGB8Eux 已成功抓取全部所需数据。
+[2026-04-10 14:23:10] [SUCCESS] bvid=BV17BXGBhEY4 已成功抓取全部所需数据。
+[2026-04-10 14:23:16] [SUCCESS] bvid=BV17C9FBaEnt 已成功抓取全部所需数据。
+[2026-04-10 14:23:22] [SUCCESS] bvid=BV17CDiBtEpM 已成功抓取全部所需数据。
+[2026-04-10 14:23:33] [SUCCESS] bvid=BV17CDsBZEyp 已成功抓取全部所需数据。
+[2026-04-10 14:23:40] [SUCCESS] bvid=BV17CDwBbEut 已成功抓取全部所需数据。
+[2026-04-10 14:23:48] [SUCCESS] bvid=BV17CXjBkE3k 已成功抓取全部所需数据。
+[2026-04-10 14:23:54] [SUCCESS] bvid=BV17CXjBkE8t 已成功抓取全部所需数据。
+[2026-04-10 14:24:03] [SUCCESS] bvid=BV17CXjBkEFq 已成功抓取全部所需数据。
+[2026-04-10 14:24:27] [SUCCESS] bvid=BV17EDcBoEEJ 已成功抓取全部所需数据。
+[2026-04-10 14:24:36] [SUCCESS] bvid=BV17EDvBREjk 已成功抓取全部所需数据。
+[2026-04-10 14:24:57] [SUCCESS] bvid=BV17EDvBREkd 已成功抓取全部所需数据。
+[2026-04-10 14:25:03] [SUCCESS] bvid=BV17F9uBXE53 已成功抓取全部所需数据。
+[2026-04-10 14:25:17] [SUCCESS] bvid=BV17F9uBXELn 已成功抓取全部所需数据。
+[2026-04-10 14:25:26] [SUCCESS] bvid=BV17FSDBFEMm 已成功抓取全部所需数据。
+[2026-04-10 14:25:36] [SUCCESS] bvid=BV17FX5BNEEU 已成功抓取全部所需数据。
+[2026-04-10 14:25:41] [SUCCESS] bvid=BV17FXNBVEQ9 已成功抓取全部所需数据。
+[2026-04-10 14:26:02] [SUCCESS] bvid=BV17G97B2EbY 已成功抓取全部所需数据。
+[2026-04-10 14:26:12] [SUCCESS] bvid=BV17GXeBoErP 已成功抓取全部所需数据。
+[2026-04-10 14:26:20] [SUCCESS] bvid=BV17HDcBREA1 已成功抓取全部所需数据。
+[2026-04-10 14:26:35] [SUCCESS] bvid=BV17HDvBXEH4 已成功抓取全部所需数据。
+[2026-04-10 14:26:44] [SUCCESS] bvid=BV17HXBBTEEo 已成功抓取全部所需数据。
+[2026-04-10 14:26:51] [SUCCESS] bvid=BV17HXPBuE6W 已成功抓取全部所需数据。
+[2026-04-10 14:26:58] [SUCCESS] bvid=BV17HXPBuE6h 已成功抓取全部所需数据。
+[2026-04-10 14:28:09] [SUCCESS] bvid=BV17HXPBuE6v 已成功抓取全部所需数据。
+[2026-04-10 14:28:16] [SUCCESS] bvid=BV17HXPBuE6x 已成功抓取全部所需数据。
+[2026-04-10 14:28:22] [SUCCESS] bvid=BV17HXPBuE9X 已成功抓取全部所需数据。
+[2026-04-10 14:28:28] [SUCCESS] bvid=BV17HXPBuE9z 已成功抓取全部所需数据。
+[2026-04-10 14:28:36] [SUCCESS] bvid=BV17HXPBuENd 已成功抓取全部所需数据。
+[2026-04-10 14:28:38] [ERROR] bvid=BV17HXPBuEPd 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-10 14:28:45] [SUCCESS] bvid=BV17HXPBuESL 已成功抓取全部所需数据。
+[2026-04-10 14:28:51] [SUCCESS] bvid=BV17HXPBuESV 已成功抓取全部所需数据。
+[2026-04-10 14:28:58] [SUCCESS] bvid=BV17HXPBuESp 已成功抓取全部所需数据。
+[2026-04-10 14:29:03] [SUCCESS] bvid=BV17HXPBuESy 已成功抓取全部所需数据。
+[2026-04-10 14:29:08] [SUCCESS] bvid=BV17HXPBuEU3 已成功抓取全部所需数据。
+[2026-04-10 14:29:13] [SUCCESS] bvid=BV17HXPBuEX4 已成功抓取全部所需数据。
+[2026-04-10 14:29:18] [SUCCESS] bvid=BV17HXPBuEXa 已成功抓取全部所需数据。
+[2026-04-10 14:29:23] [SUCCESS] bvid=BV17JXPB6EJ2 已成功抓取全部所需数据。
+[2026-04-10 14:29:30] [SUCCESS] bvid=BV17JXPB6EeC 已成功抓取全部所需数据。
+[2026-04-10 14:29:45] [SUCCESS] bvid=BV17JXoBHEGp 已成功抓取全部所需数据。
+[2026-04-10 14:29:50] [SUCCESS] bvid=BV17KX8BLE4d 已成功抓取全部所需数据。
+[2026-04-10 14:30:00] [SUCCESS] bvid=BV17KX8BLE6k 已成功抓取全部所需数据。
+[2026-04-10 14:30:09] [SUCCESS] bvid=BV17KX8BLELr 已成功抓取全部所需数据。
+[2026-04-10 14:32:17] [ERROR] bvid=BV17KX8BLERE 抓取失败：media: Timeout of 120.0s exceeded, last exception: HTTPSConnectionPool(host='storage.googleapis.com', port=443): Read timed out. (read timeout=61)
+[2026-04-10 14:32:23] [SUCCESS] bvid=BV17KX8BLEWo 已成功抓取全部所需数据。
+[2026-04-10 14:32:29] [SUCCESS] bvid=BV17KX8BLEkx 已成功抓取全部所需数据。
+[2026-04-10 14:32:36] [SUCCESS] bvid=BV17KX8BLEuB 已成功抓取全部所需数据。
+[2026-04-10 14:32:42] [SUCCESS] bvid=BV17L97ByEBd 已成功抓取全部所需数据。
+[2026-04-10 14:32:47] [SUCCESS] bvid=BV17LDhB3EHZ 已成功抓取全部所需数据。
+[2026-04-10 14:32:58] [SUCCESS] bvid=BV17LXeBRECC 已成功抓取全部所需数据。
+[2026-04-10 14:33:04] [SUCCESS] bvid=BV17LXeBRERo 已成功抓取全部所需数据。
+[2026-04-10 14:33:10] [SUCCESS] bvid=BV17LXeBREeQ 已成功抓取全部所需数据。
+[2026-04-10 14:33:27] [SUCCESS] bvid=BV17LXeBREi5 已成功抓取全部所需数据。
+[2026-04-10 14:33:36] [SUCCESS] bvid=BV17LXeBdEZG 已成功抓取全部所需数据。
+[2026-04-10 14:33:47] [SUCCESS] bvid=BV17M9wBPEEC 已成功抓取全部所需数据。
+[2026-04-10 14:33:56] [SUCCESS] bvid=BV17MD7BBEbr 已成功抓取全部所需数据。
+[2026-04-10 14:34:02] [SUCCESS] bvid=BV17MXTB1E3h 已成功抓取全部所需数据。
+[2026-04-10 14:34:08] [SUCCESS] bvid=BV17MXTB1EeJ 已成功抓取全部所需数据。
+[2026-04-10 14:34:15] [SUCCESS] bvid=BV17MXXBVEu4 已成功抓取全部所需数据。
+[2026-04-10 14:34:18] [ERROR] bvid=BV17PX8B2EDs 抓取失败：media: 网络错误，状态码：504 - <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html lang="zh-cn">
+
+<head>
+    <meta http-equiv="Page-Enter" content="blendTrans(Duration=0.5)">
+    <meta http-equiv="Page-Exit" content="blendTrans(Duration=0.5)">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta name="spm_prefix" content="333.937">
+    <title>出错啦! - bilibili.com</title>
+    <style type="text/css">
+
+        html,body {
+            vertical-align: middle;
+            padding: 0;
+            margin: 0;
+        }
+
+        div.center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            margin: -25% 0 0 -320px;
+            width: 640px;
+            min-height: 427px;
+            padding: 0px;
+        }
+
+        div.errmsg {
+            text-align: left;
+            width: 640px;
+            line-height: 150%;
+        }
+
+        a {
+            text-decoration: none;
+            color: red
+        }
+
+        .center {
+            display: none
+        }
+
+        .h5-container {
+            display: none;
+        }
+        @media screen and (max-width: 500px) {
+            #biliMainHeader, .error-container {
+                display: none;
+            }
+
+            .h5-container {
+                display: block;
+                position:absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+            }
+
+            .h5__img {
+                display: block;
+                width: 300px;
+            }
+
+            .h5__desc {
+                color: #a0a0a0;
+                text-align: center;
+            }
+        }
+
+    </style>
+    <link rel="shortcut icon" href="//static.hdslb.com/images/favicon.ico">
+    <link href="//static.hdslb.com/error/dist/error.css" rel="stylesheet">
+    <script type="text/javascript">
+        var options = {
+            type: 'defaultError'
+        }
+        window.spmReportData = {};
+        window.reportConfig = {
+            sample: 1,
+            msgObjects: "spmReportData",
+        };
+    </script>
+    <script src="//s1.hdslb.com/bfs/seed/log/report/log-reporter.js"></script>
+    <script type="text/javascript" src="//s1.hdslb.com/bfs/static/jinkela/long/js/jquery/jquery1.7.2.min.js"></script>
+</head>
+
+<body style="direction: ltr;">
+    <div id="biliMainHeader" style="height: 56px; background-color: #fff;"></div>
+    <div class="error-container">
+        <div class="error-panel server-error">
+            <div style="text-align: center; padding: 40px 0 40px 0;">
+              <a class="rollback-btn" style="padding: 0 20px; float: none;">返回上一页</a>
+            </div>
+        </div>
+        <div class="error-split">
+        </div>
+        <div class="error-manga">
+        </div>
+    </div>
+    <div class="h5-container">
+        <img class="h5__img" src="//s1.hdslb.com/bfs/static/jinkela/long/bitmap/error_01.png" alt="parse failed">
+        <div class="h5__desc">
+            <span>Σ(oﾟдﾟoﾉ) 服务器正在休息 zZ</span>
+        </div>
+    </div>
+    <script type="text/javascript" src="//s1.hdslb.com/bfs/seed/jinkela/header-v2/header.js"></script>
+    <script type="text/javascript" charset="utf-8" src="//s1.hdslb.com/bfs/static/jinkela/long/error/error.js"></script>
+</body>
+
+</html>
+。
+[2026-04-10 14:34:23] [SUCCESS] bvid=BV17PXNB6EpL 已成功抓取全部所需数据。
+[2026-04-10 14:34:28] [SUCCESS] bvid=BV17PXjBgEAU 已成功抓取全部所需数据。
+[2026-04-10 14:34:37] [SUCCESS] bvid=BV17PXjBgEuR 已成功抓取全部所需数据。
+[2026-04-10 14:34:43] [SUCCESS] bvid=BV17QD6BqEDe 已成功抓取全部所需数据。
+[2026-04-10 14:34:50] [SUCCESS] bvid=BV17QD6BqEUa 已成功抓取全部所需数据。
+[2026-04-10 14:34:56] [SUCCESS] bvid=BV17QD6BqEku 已成功抓取全部所需数据。
+[2026-04-10 14:35:02] [SUCCESS] bvid=BV17QD7BuEBj 已成功抓取全部所需数据。
+[2026-04-10 14:35:08] [SUCCESS] bvid=BV17QD7BuEPG 已成功抓取全部所需数据。
+[2026-04-10 14:35:14] [SUCCESS] bvid=BV17QD7BuEzj 已成功抓取全部所需数据。
+[2026-04-10 14:35:21] [SUCCESS] bvid=BV17QDKBzEAT 已成功抓取全部所需数据。
+[2026-04-10 14:35:27] [SUCCESS] bvid=BV17QDKBzEcj 已成功抓取全部所需数据。
+[2026-04-10 14:35:35] [SUCCESS] bvid=BV17QDKBzEnZ 已成功抓取全部所需数据。
+[2026-04-10 14:35:45] [SUCCESS] bvid=BV17QXaBpEYT 已成功抓取全部所需数据。
+[2026-04-10 14:35:53] [SUCCESS] bvid=BV17QXaBpEvJ 已成功抓取全部所需数据。
+[2026-04-10 14:35:59] [SUCCESS] bvid=BV17R9KBEEyQ 已成功抓取全部所需数据。
+[2026-04-10 14:36:14] [SUCCESS] bvid=BV17RXaBnEEZ 已成功抓取全部所需数据。
+[2026-04-10 14:36:21] [SUCCESS] bvid=BV17RXaBnEs3 已成功抓取全部所需数据。
+[2026-04-10 14:36:27] [SUCCESS] bvid=BV17RXpBbEqX 已成功抓取全部所需数据。
+[2026-04-10 14:36:33] [SUCCESS] bvid=BV17SXEBjEEc 已成功抓取全部所需数据。
+[2026-04-10 14:36:33] [WARN] 当前子任务已结束，但仍有未成功抓取的视频，已导出 remaining CSV 供继续执行。
+[2026-04-10 14:36:33] [INFO] 已导出剔除成功条目后的剩余 CSV：outputs\video_data\manual_crawls\manual_crawl_media_mode_A_20260410_133107\remaining_bvids_part_5.csv
+[2026-04-10 14:36:33] 子任务结束时间：2026-04-10T14:36:33.810209
+[TIMESTAMP][END] 2026-04-10T14:36:33

@@ -1,0 +1,28 @@
+{
+  "session_dir": "outputs\\video_data\\manual_crawls\\manual_crawl_media_mode_A_20260409_203527",
+  "parts": [
+    {
+      "part_number": 1,
+      "source_csv_name": "batch_input_1.csv",
+      "task_mode": "media_only",
+      "subtask_started_at": "2026-04-09T20:35:27.771927",
+      "subtask_finished_at": "2026-04-09T20:55:36.028956",
+      "input_bvid_count": 100,
+      "processed_count": 100,
+      "success_count": 64,
+      "failed_count": 36,
+      "remaining_count": 36,
+      "consecutive_failure_limit": 10,
+      "stopped_due_to_consecutive_failures": false,
+      "stop_reason": "当前子任务已结束，但仍有未成功抓取的视频，已导出 remaining CSV 供继续执行。",
+      "log_file": "logs/batch_crawl_part_1_20260409_205536.log",
+      "remaining_file": "remaining_bvids_part_1.csv"
+    }
+  ],
+  "session_started_at": "2026-04-09T20:35:27.771927",
+  "session_completed_at": "",
+  "original_csv_name": "batch_input_1.csv",
+  "task_mode": "media_only",
+  "original_bvid_count": 100,
+  "completed_all": false
+}

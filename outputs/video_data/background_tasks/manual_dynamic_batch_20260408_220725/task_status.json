@@ -1,0 +1,25 @@
+{
+  "status": "completed",
+  "task_kind": "manual_dynamic_batch",
+  "scope": "manual_dynamic_batch",
+  "task_dir": "D:\\Schoolworks\\Thesis\\Bilibili-Datahub\\outputs\\video_data\\background_tasks\\manual_dynamic_batch_20260408_220725",
+  "pid": 10704,
+  "started_at": "2026-04-08T22:07:27.632196",
+  "last_progress_at": "2026-04-09T12:59:04.127276",
+  "stop_requested": true,
+  "stop_requested_at": "2026-04-09T12:58:00.411462",
+  "stop_requested_reason": "用户在 DataHub 页面中请求停止任务。",
+  "finished_at": "2026-04-09T12:59:04.127276",
+  "result": {
+    "status": "completed",
+    "session_dir": "D:\\Schoolworks\\Thesis\\Bilibili-Datahub\\outputs\\video_data\\manual_crawls\\manual_crawl_stat_comment_20260408_220727",
+    "session_completed_at": "2026-04-09T00:08:43.848161",
+    "recovered_from_stale": true
+  },
+  "recovery": {
+    "type": "RecoveredFromBatchState",
+    "message": "Recovered completed status from batch crawl state after worker exited without final status."
+  },
+  "stale": true,
+  "result_path": "D:\\Schoolworks\\Thesis\\Bilibili-Datahub\\outputs\\video_data\\background_tasks\\manual_dynamic_batch_20260408_220725\\task_result.json"
+}

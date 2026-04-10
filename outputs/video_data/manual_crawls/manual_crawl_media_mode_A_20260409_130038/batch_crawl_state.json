@@ -1,0 +1,62 @@
+{
+  "session_dir": "outputs\\video_data\\manual_crawls\\manual_crawl_media_mode_A_20260409_130038",
+  "parts": [
+    {
+      "part_number": 1,
+      "source_csv_name": "batch_input_1.csv",
+      "task_mode": "media_only",
+      "subtask_started_at": "2026-04-09T13:00:38.312675",
+      "subtask_finished_at": "2026-04-09T13:21:29.085279",
+      "input_bvid_count": 100,
+      "processed_count": 100,
+      "success_count": 98,
+      "failed_count": 2,
+      "remaining_count": 2,
+      "consecutive_failure_limit": 10,
+      "stopped_due_to_consecutive_failures": false,
+      "stop_reason": "当前子任务已结束，但仍有未成功抓取的视频，已导出 remaining CSV 供继续执行。",
+      "log_file": "logs/batch_crawl_part_1_20260409_132129.log",
+      "remaining_file": "remaining_bvids_part_1.csv"
+    },
+    {
+      "part_number": 2,
+      "source_csv_name": "batch_input_2.csv",
+      "task_mode": "media_only",
+      "subtask_started_at": "2026-04-09T13:21:29.445048",
+      "subtask_finished_at": "2026-04-09T13:31:47.184744",
+      "input_bvid_count": 100,
+      "processed_count": 100,
+      "success_count": 97,
+      "failed_count": 3,
+      "remaining_count": 3,
+      "consecutive_failure_limit": 10,
+      "stopped_due_to_consecutive_failures": false,
+      "stop_reason": "当前子任务已结束，但仍有未成功抓取的视频，已导出 remaining CSV 供继续执行。",
+      "log_file": "logs/batch_crawl_part_2_20260409_133147.log",
+      "remaining_file": "remaining_bvids_part_2.csv"
+    },
+    {
+      "part_number": 3,
+      "source_csv_name": "batch_input_3.csv",
+      "task_mode": "media_only",
+      "subtask_started_at": "2026-04-09T13:31:47.388238",
+      "subtask_finished_at": "2026-04-09T13:42:57.968161",
+      "input_bvid_count": 100,
+      "processed_count": 100,
+      "success_count": 97,
+      "failed_count": 3,
+      "remaining_count": 3,
+      "consecutive_failure_limit": 10,
+      "stopped_due_to_consecutive_failures": false,
+      "stop_reason": "当前子任务已结束，但仍有未成功抓取的视频，已导出 remaining CSV 供继续执行。",
+      "log_file": "logs/batch_crawl_part_3_20260409_134257.log",
+      "remaining_file": "remaining_bvids_part_3.csv"
+    }
+  ],
+  "session_started_at": "2026-04-09T13:00:38.312675",
+  "session_completed_at": "",
+  "original_csv_name": "batch_input_1.csv",
+  "task_mode": "media_only",
+  "original_bvid_count": 100,
+  "completed_all": false
+}
