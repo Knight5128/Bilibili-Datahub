@@ -1,0 +1,38 @@
+[TIMESTAMP][BEGIN] 2026-04-14T11:31:39
+[2026-04-14 11:31:41] 开始执行 CSV 批量抓取子任务 part_57。
+[2026-04-14 11:31:41] 子任务开始时间：2026-04-14T11:31:39.068892
+[2026-04-14 11:31:41] 输入文件：batch_input_57.csv
+[2026-04-14 11:31:41] 输入唯一 bvid 数量：29
+[2026-04-14 11:31:41] 为严格按 CSV 顺序判断连续失败阈值，本次任务自动将并发度从 2 调整为 1。
+[2026-04-14 11:31:46] [SUCCESS] bvid=BV1rUDhBmEHT 已成功抓取全部所需数据。
+[2026-04-14 11:31:51] [SUCCESS] bvid=BV1cUDhBUEhX 已成功抓取全部所需数据。
+[2026-04-14 11:31:57] [SUCCESS] bvid=BV1xnDaBdEgD 已成功抓取全部所需数据。
+[2026-04-14 11:32:03] [SUCCESS] bvid=BV1x7DaBZEFg 已成功抓取全部所需数据。
+[2026-04-14 11:32:09] [SUCCESS] bvid=BV147DaBZEjp 已成功抓取全部所需数据。
+[2026-04-14 11:32:22] [SUCCESS] bvid=BV147DaBZEV8 已成功抓取全部所需数据。
+[2026-04-14 11:32:34] [SUCCESS] bvid=BV1uUD8BfEfk 已成功抓取全部所需数据。
+[2026-04-14 11:32:40] [SUCCESS] bvid=BV1HbDaBnEkq 已成功抓取全部所需数据。
+[2026-04-14 11:32:45] [SUCCESS] bvid=BV1HbDaBnEAP 已成功抓取全部所需数据。
+[2026-04-14 11:32:50] [SUCCESS] bvid=BV1WWDaB9EbK 已成功抓取全部所需数据。
+[2026-04-14 11:33:02] [SUCCESS] bvid=BV1jBSZBjEVX 已成功抓取全部所需数据。
+[2026-04-14 11:33:07] [SUCCESS] bvid=BV1PASfBFEdL 已成功抓取全部所需数据。
+[2026-04-14 11:33:19] [SUCCESS] bvid=BV17EDcBoEEJ 已成功抓取全部所需数据。
+[2026-04-14 11:33:30] [SUCCESS] bvid=BV1gRDVBDEQ4 已成功抓取全部所需数据。
+[2026-04-14 11:33:35] [SUCCESS] bvid=BV1co9gBYEG1 已成功抓取全部所需数据。
+[2026-04-14 11:33:41] [SUCCESS] bvid=BV1PcSfBhEVH 已成功抓取全部所需数据。
+[2026-04-14 11:33:52] [SUCCESS] bvid=BV1ubSoBeEFx 已成功抓取全部所需数据。
+[2026-04-14 11:33:58] [SUCCESS] bvid=BV1pxDaBpE2g 已成功抓取全部所需数据。
+[2026-04-14 11:34:03] [SUCCESS] bvid=BV1YKDaBKE8j 已成功抓取全部所需数据。
+[2026-04-14 11:34:09] [SUCCESS] bvid=BV14jDaBbE76 已成功抓取全部所需数据。
+[2026-04-14 11:34:20] [SUCCESS] bvid=BV12jDaBbE2z 已成功抓取全部所需数据。
+[2026-04-14 11:34:26] [SUCCESS] bvid=BV1UGDaBwE63 已成功抓取全部所需数据。
+[2026-04-14 11:34:31] [SUCCESS] bvid=BV1mbDbBXEsg 已成功抓取全部所需数据。
+[2026-04-14 11:34:37] [SUCCESS] bvid=BV1mhDbBHERV 已成功抓取全部所需数据。
+[2026-04-14 11:34:42] [SUCCESS] bvid=BV1RWDcBpE7L 已成功抓取全部所需数据。
+[2026-04-14 11:34:47] [SUCCESS] bvid=BV1DpDbBoEtD 已成功抓取全部所需数据。
+[2026-04-14 11:34:53] [SUCCESS] bvid=BV1d5DbBAEFN 已成功抓取全部所需数据。
+[2026-04-14 11:34:59] [SUCCESS] bvid=BV1L5DbBPEPE 已成功抓取全部所需数据。
+[2026-04-14 11:35:05] [SUCCESS] bvid=BV1vdDbBNE9A 已成功抓取全部所需数据。
+[2026-04-14 11:35:05] [INFO] 当前 batch_crawl 已完成，所有视频均已成功抓取。
+[2026-04-14 11:35:05] 子任务结束时间：2026-04-14T11:35:05.194169
+[TIMESTAMP][END] 2026-04-14T11:35:05
