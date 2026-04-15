@@ -1,0 +1,65 @@
+[TIMESTAMP][BEGIN] 2026-04-15T10:40:12
+[2026-04-15 10:40:14] 开始执行 CSV 批量抓取子任务 part_57。
+[2026-04-15 10:40:14] 子任务开始时间：2026-04-15T10:40:12.410795
+[2026-04-15 10:40:14] 输入文件：batch_input_57.csv
+[2026-04-15 10:40:14] 输入唯一 bvid 数量：49
+[2026-04-15 10:40:14] 为严格按 CSV 顺序判断连续失败阈值，本次任务自动将并发度从 2 调整为 1。
+[2026-04-15 10:40:20] [SUCCESS] bvid=BV1ZtDzBPEFc 已成功抓取全部所需数据。
+[2026-04-15 10:40:26] [SUCCESS] bvid=BV1pqDBBuEU9 已成功抓取全部所需数据。
+[2026-04-15 10:40:31] [SUCCESS] bvid=BV198DvBjEdC 已成功抓取全部所需数据。
+[2026-04-15 10:40:37] [SUCCESS] bvid=BV1WxDeBcEHV 已成功抓取全部所需数据。
+[2026-04-15 10:40:56] [SUCCESS] bvid=BV1yvD6BEE7S 已成功抓取全部所需数据。
+[2026-04-15 10:41:07] [SUCCESS] bvid=BV1MmDzBHEuV 已成功抓取全部所需数据。
+[2026-04-15 10:41:13] [SUCCESS] bvid=BV1ohDzBwEQo 已成功抓取全部所需数据。
+[2026-04-15 10:41:19] [SUCCESS] bvid=BV1jaDzBaEwH 已成功抓取全部所需数据。
+[2026-04-15 10:41:32] [SUCCESS] bvid=BV1RaDzBhEJH 已成功抓取全部所需数据。
+[2026-04-15 10:41:38] [SUCCESS] bvid=BV1ZtDzBPEHF 已成功抓取全部所需数据。
+[2026-04-15 10:41:43] [SUCCESS] bvid=BV1ZbDzBYEqt 已成功抓取全部所需数据。
+[2026-04-15 10:41:48] [SUCCESS] bvid=BV1ZbDzBYEtK 已成功抓取全部所需数据。
+[2026-04-15 10:41:54] [SUCCESS] bvid=BV1ZbDzBYEYx 已成功抓取全部所需数据。
+[2026-04-15 10:41:54] [ERROR] bvid=BV19iDzBZE93 抓取失败：stat: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1} | comment: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-15 10:42:00] [SUCCESS] bvid=BV1XBDzB4E8V 已成功抓取全部所需数据。
+[2026-04-15 10:42:00] [ERROR] bvid=BV15BDzBtEMe 抓取失败：stat: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1} | comment: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-15 10:42:05] [SUCCESS] bvid=BV1LeDzBcEa6 已成功抓取全部所需数据。
+[2026-04-15 10:42:11] [SUCCESS] bvid=BV1uUD8BfE8S 已成功抓取全部所需数据。
+[2026-04-15 10:42:11] [ERROR] bvid=BV1deDzBFEJW 抓取失败：stat: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1} | comment: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-15 10:42:17] [SUCCESS] bvid=BV1yzDhB9EPe 已成功抓取全部所需数据。
+[2026-04-15 10:42:23] [SUCCESS] bvid=BV1RvDzBbEC4 已成功抓取全部所需数据。
+[2026-04-15 10:42:29] [SUCCESS] bvid=BV1BuD6BKEYU 已成功抓取全部所需数据。
+[2026-04-15 10:42:34] [SUCCESS] bvid=BV1BuD6BKESv 已成功抓取全部所需数据。
+[2026-04-15 10:42:40] [SUCCESS] bvid=BV16KD6BMEjX 已成功抓取全部所需数据。
+[2026-04-15 10:42:45] [SUCCESS] bvid=BV16KD6BMEwm 已成功抓取全部所需数据。
+[2026-04-15 10:42:57] [SUCCESS] bvid=BV1iVD6BeEuk 已成功抓取全部所需数据。
+[2026-04-15 10:43:09] [SUCCESS] bvid=BV1vVD6BYEsP 已成功抓取全部所需数据。
+[2026-04-15 10:43:14] [SUCCESS] bvid=BV1vLD6BwECz 已成功抓取全部所需数据。
+[2026-04-15 10:43:20] [SUCCESS] bvid=BV1JeDeBREk9 已成功抓取全部所需数据。
+[2026-04-15 10:43:31] [SUCCESS] bvid=BV1DYDYBiEWL 已成功抓取全部所需数据。
+[2026-04-15 10:43:36] [SUCCESS] bvid=BV1AgDvBcE97 已成功抓取全部所需数据。
+[2026-04-15 10:43:53] [SUCCESS] bvid=BV1XHSoBMEAY 已成功抓取全部所需数据。
+[2026-04-15 10:43:58] [SUCCESS] bvid=BV1Lt9gBpEGq 已成功抓取全部所需数据。
+[2026-04-15 10:44:04] [SUCCESS] bvid=BV1u9DaBPEk7 已成功抓取全部所需数据。
+[2026-04-15 10:44:16] [SUCCESS] bvid=BV1qZSSBhEmv 已成功抓取全部所需数据。
+[2026-04-15 10:44:28] [SUCCESS] bvid=BV1YZDBBREbs 已成功抓取全部所需数据。
+[2026-04-15 10:44:34] [SUCCESS] bvid=BV1tJDeBNEDv 已成功抓取全部所需数据。
+[2026-04-15 10:44:40] [SUCCESS] bvid=BV1yRDzB1EFv 已成功抓取全部所需数据。
+[2026-04-15 10:44:45] [SUCCESS] bvid=BV12QDzBmEBx 已成功抓取全部所需数据。
+[2026-04-15 10:44:51] [SUCCESS] bvid=BV129DzBjEsx 已成功抓取全部所需数据。
+[2026-04-15 10:55:02] [ERROR] bvid=BV129DzBjENN 抓取失败：stat: Timeout of 600.0s exceeded, last exception: HTTPSConnectionPool(host='bigquery.googleapis.com', port=443): Max retries exceeded with url: /bigquery/v2/projects/bilibili-m2s2vp-research/datasets?prettyPrint=false (Caused by ProxyError('Unable to connect to proxy', RemoteDisconnected('Remote end closed connection without response')))
+[2026-04-15 10:55:08] [SUCCESS] bvid=BV1SbD6BpE53 已成功抓取全部所需数据。
+[2026-04-15 10:55:21] [SUCCESS] bvid=BV1WvD6BEEXv 已成功抓取全部所需数据。
+[2026-04-15 10:55:27] [SUCCESS] bvid=BV1xiD6BmE3T 已成功抓取全部所需数据。
+[2026-04-15 10:55:33] [SUCCESS] bvid=BV1siD6BmESk 已成功抓取全部所需数据。
+[2026-04-15 10:55:38] [SUCCESS] bvid=BV1anD6BZEm6 已成功抓取全部所需数据。
+[2026-04-15 10:55:50] [SUCCESS] bvid=BV1rfDqBNEip 已成功抓取全部所需数据。
+[2026-04-15 10:56:08] [SUCCESS] bvid=BV1m2DqBVE9v 已成功抓取全部所需数据。
+[2026-04-15 10:56:19] [SUCCESS] bvid=BV1QBDqBUEhh 已成功抓取全部所需数据。
+[2026-04-15 10:56:19] [WARN] 当前子任务已结束，但仍有未成功抓取的视频，已导出 remaining CSV 供继续执行。
+[2026-04-15 10:56:19] [INFO] 已导出剔除成功条目后的剩余 CSV：D:\Schoolworks\Thesis\Bilibili-Datahub\outputs\video_data\manual_crawls\manual_crawl_stat_comment_20260414_214213\remaining_bvids_part_57.csv
+[2026-04-15 10:56:19] 子任务结束时间：2026-04-15T10:56:19.327760
+[TIMESTAMP][END] 2026-04-15T10:56:19
