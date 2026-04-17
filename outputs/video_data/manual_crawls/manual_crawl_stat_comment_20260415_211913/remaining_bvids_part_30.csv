@@ -1,0 +1,2 @@
+﻿bvid,board_rid,board_name,board_rank,source_type,source_ref,discovered_at,last_seen_at,owner_mid,tid,pubdate,duration_seconds,seed_score,source_refs,source_csv_path,source_group,_source_priority
+BV1t7D1BKEBZ,1004.0,舞蹈,24.0,rankboard,rankboard:rid=1004:rank=24,2026-04-14T11:45:49.542200+00:00,,158218444,21,2026-04-11T12:44:23+00:00,40,121598.0,"rankboard:rid=1004:rank=24,https://www.bilibili.com/v/popular/rank/dance",full_site_floorings/rankboard-20260414_194539.csv,full_site_floorings,1002

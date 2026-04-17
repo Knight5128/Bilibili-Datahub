@@ -1,0 +1,12 @@
+{
+  "status": "stopping",
+  "task_kind": "manual_media_mode_a",
+  "scope": "manual_media",
+  "task_dir": "D:\\Schoolworks\\Thesis\\Bilibili-Datahub\\outputs\\video_data\\background_tasks\\manual_media_mode_a_20260417_011319",
+  "pid": 24104,
+  "started_at": "2026-04-17T01:13:21.223717",
+  "last_progress_at": "2026-04-17T22:52:58.411395",
+  "stop_requested": true,
+  "stop_requested_at": "2026-04-17T22:53:45.021753",
+  "stop_requested_reason": "用户在 DataHub 页面中请求停止任务。"
+}
