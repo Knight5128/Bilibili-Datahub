@@ -1,0 +1,5 @@
+[TIMESTAMP][BEGIN] 2026-04-19T18:42:21
+[2026-04-19 15:59:55] [INFO] 开始 Mode A（元数据）任务目录：outputs/video_data/manual_crawls/manual_crawl_meta_mode_A_20260419_155955
+[2026-04-19 18:42:21] [INFO] Mode A（元数据）抓取完成：成功 65 条，失败 26 条，剩余 26 条。
+[2026-04-19 18:42:21] [INFO] 本轮结束后已刷新待补元数据清单：outputs/video_data/manual_crawls/manual_crawl_meta_waitlist_bili_video_stream_data_test_2.csv。
+[TIMESTAMP][END] 2026-04-19T18:42:21

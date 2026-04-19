@@ -1,0 +1,35 @@
+[TIMESTAMP][BEGIN] 2026-04-19T22:52:21
+[2026-04-19 22:52:24] 开始执行 CSV 批量抓取子任务 part_6。
+[2026-04-19 22:52:24] 子任务开始时间：2026-04-19T22:52:21.726484
+[2026-04-19 22:52:24] 输入文件：batch_input_6.csv
+[2026-04-19 22:52:24] 输入唯一 bvid 数量：100
+[2026-04-19 22:52:32] [ERROR] bvid=BV1eSXjBBE8U 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-19 22:52:35] [ERROR] bvid=BV1eYDjBaEpx 抓取失败：media: No downloadable media stream found for this bvid.
+[2026-04-19 22:52:38] [ERROR] bvid=BV1ei95BYEA4 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-19 22:52:47] [ERROR] bvid=BV1eiXMBLEPi 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-19 22:52:58] [SUCCESS] bvid=BV1erXGBtEZj 已成功抓取全部所需数据。
+[2026-04-19 22:53:06] [ERROR] bvid=BV1exXmBxEui 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-19 22:53:09] [ERROR] bvid=BV1f2XuB4E9h 抓取失败：media: 接口返回错误代码：62012，信息：62012。
+{'code': 62012, 'message': '62012', 'ttl': 1}
+[2026-04-19 22:53:11] [ERROR] bvid=BV1f3DkBkESy 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-19 22:53:14] [ERROR] bvid=BV1f7DvBsEay 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-19 22:53:17] [ERROR] bvid=BV1fCDiB4EAt 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-19 22:53:20] [ERROR] bvid=BV1fE9gBbEbg 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-19 22:53:23] [ERROR] bvid=BV1fJXLBuEcQ 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-19 22:53:25] [ERROR] bvid=BV1fJXLBuEer 抓取失败：media: No downloadable media stream found for this bvid.
+[2026-04-19 22:53:28] [ERROR] bvid=BV1fKDbBBEKC 抓取失败：media: No downloadable media stream found for this bvid.
+[2026-04-19 22:53:37] [ERROR] bvid=BV1fL9JBHEKL 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-19 22:53:37] [STOP] 检测到连续 10 条视频抓取失败，已按阈值 10 暂停当前 CSV 批量抓取流程。
+[2026-04-19 22:53:37] [INFO] 已导出剔除成功条目后的剩余 CSV：outputs\video_data\manual_crawls\manual_crawl_media_mode_A_20260419_224823\remaining_bvids_part_6.csv
+[2026-04-19 22:53:37] 子任务结束时间：2026-04-19T22:53:37.139138
+[TIMESTAMP][END] 2026-04-19T22:53:37

@@ -1,0 +1,19 @@
+[TIMESTAMP][BEGIN] 2026-04-18T21:11:57
+[2026-04-18 21:12:06] 开始执行 CSV 批量抓取子任务 part_98。
+[2026-04-18 21:12:06] 子任务开始时间：2026-04-18T21:11:57.519485
+[2026-04-18 21:12:06] 输入文件：remaining_bvids_part_97.csv
+[2026-04-18 21:12:06] 输入唯一 bvid 数量：7
+[2026-04-18 21:12:18] [SUCCESS] bvid=BV1tQ95BpEEd 已成功抓取全部所需数据。
+[2026-04-18 21:12:21] [ERROR] bvid=BV1tRD8BREw6 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-18 21:12:24] [ERROR] bvid=BV1tRXGBUE1g 抓取失败：media: 接口返回错误代码：62012，信息：62012。
+{'code': 62012, 'message': '62012', 'ttl': 1}
+[2026-04-18 21:12:31] [SUCCESS] bvid=BV1tTX6BsEN9 已成功抓取全部所需数据。
+[2026-04-18 21:12:39] [ERROR] bvid=BV1tUXhBvEkE 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-18 21:12:45] [SUCCESS] bvid=BV1tVSZBYEuD 已成功抓取全部所需数据。
+[2026-04-18 21:12:51] [SUCCESS] bvid=BV1tXDXBsEXp 已成功抓取全部所需数据。
+[2026-04-18 21:12:51] [WARN] 当前子任务已结束，但仍有未成功抓取的视频，已导出 remaining CSV 供继续执行。
+[2026-04-18 21:12:51] [INFO] 已导出剔除成功条目后的剩余 CSV：outputs\video_data\manual_crawls\manual_crawl_media_mode_A_20260418_000648\remaining_bvids_part_98.csv
+[2026-04-18 21:12:51] 子任务结束时间：2026-04-18T21:12:51.239732
+[TIMESTAMP][END] 2026-04-18T21:12:51

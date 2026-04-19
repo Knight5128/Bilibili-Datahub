@@ -1,0 +1,20 @@
+[TIMESTAMP][BEGIN] 2026-04-18T23:32:34
+[2026-04-18 23:32:37] 开始执行 CSV 批量抓取子任务 part_106。
+[2026-04-18 23:32:37] 子任务开始时间：2026-04-18T23:32:34.937913
+[2026-04-18 23:32:37] 输入文件：remaining_bvids_part_105.csv
+[2026-04-18 23:32:37] 输入唯一 bvid 数量：7
+[2026-04-18 23:32:45] [ERROR] bvid=BV1uyQwBQEoo 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-18 23:32:51] [SUCCESS] bvid=BV1uzDWBrEHm 已成功抓取全部所需数据。
+[2026-04-18 23:33:04] [SUCCESS] bvid=BV1uzDvB3Ewr 已成功抓取全部所需数据。
+[2026-04-18 23:33:22] [SUCCESS] bvid=BV1v2DfBXEZd 已成功抓取全部所需数据。
+[2026-04-18 23:33:31] [ERROR] bvid=BV1v6XgBnEe6 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-18 23:33:33] [ERROR] bvid=BV1v8D5BdEPn 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-18 23:33:36] [ERROR] bvid=BV1v8XKBrEw2 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-18 23:33:36] [WARN] 当前子任务已结束，但仍有未成功抓取的视频，已导出 remaining CSV 供继续执行。
+[2026-04-18 23:33:36] [INFO] 已导出剔除成功条目后的剩余 CSV：outputs\video_data\manual_crawls\manual_crawl_media_mode_A_20260418_000648\remaining_bvids_part_106.csv
+[2026-04-18 23:33:36] 子任务结束时间：2026-04-18T23:33:36.241248
+[TIMESTAMP][END] 2026-04-18T23:33:36

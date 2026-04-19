@@ -1,0 +1,28 @@
+[TIMESTAMP][BEGIN] 2026-04-19T22:49:00
+[2026-04-19 22:49:03] 开始执行 CSV 批量抓取子任务 part_2。
+[2026-04-19 22:49:03] 子任务开始时间：2026-04-19T22:49:00.797893
+[2026-04-19 22:49:03] 输入文件：batch_input_2.csv
+[2026-04-19 22:49:03] 输入唯一 bvid 数量：100
+[2026-04-19 22:49:05] [ERROR] bvid=BV1AQXmBBEg6 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-19 22:49:08] [ERROR] bvid=BV1AVXLB5E7E 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-19 22:49:11] [ERROR] bvid=BV1AVXLB5E7n 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-19 22:49:13] [ERROR] bvid=BV1Ac9LBjEgA 抓取失败：media: 接口返回错误代码：62012，信息：62012。
+{'code': 62012, 'message': '62012', 'ttl': 1}
+[2026-04-19 22:49:22] [ERROR] bvid=BV1AkDQBVE8h 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-19 22:49:25] [ERROR] bvid=BV1B6XjByEkA 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-19 22:49:27] [ERROR] bvid=BV1BJXsBcEK8 抓取失败：media: No downloadable media stream found for this bvid.
+[2026-04-19 22:49:30] [ERROR] bvid=BV1BPX8B2EDX 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-19 22:49:33] [ERROR] bvid=BV1BQDMB7EKV 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-19 22:49:36] [ERROR] bvid=BV1BS9LBkEBh 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-19 22:49:36] [STOP] 检测到连续 10 条视频抓取失败，已按阈值 10 暂停当前 CSV 批量抓取流程。
+[2026-04-19 22:49:36] [INFO] 已导出剔除成功条目后的剩余 CSV：outputs\video_data\manual_crawls\manual_crawl_media_mode_A_20260419_224823\remaining_bvids_part_2.csv
+[2026-04-19 22:49:36] 子任务结束时间：2026-04-19T22:49:36.018020
+[TIMESTAMP][END] 2026-04-19T22:49:36

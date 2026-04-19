@@ -1,0 +1,117 @@
+[TIMESTAMP][BEGIN] 2026-04-18T14:24:29
+[2026-04-18 14:24:31] 开始执行 CSV 批量抓取子任务 part_75。
+[2026-04-18 14:24:31] 子任务开始时间：2026-04-18T14:24:29.493891
+[2026-04-18 14:24:31] 输入文件：batch_input_72.csv
+[2026-04-18 14:24:31] 输入唯一 bvid 数量：100
+[2026-04-18 14:24:36] [SUCCESS] bvid=BV1o49WB8Eu8 已成功抓取全部所需数据。
+[2026-04-18 14:24:42] [SUCCESS] bvid=BV1o4D5BZEPi 已成功抓取全部所需数据。
+[2026-04-18 14:24:46] [SUCCESS] bvid=BV1o4XKBCEfk 已成功抓取全部所需数据。
+[2026-04-18 14:24:58] [SUCCESS] bvid=BV1o4XQBgE8F 已成功抓取全部所需数据。
+[2026-04-18 14:25:04] [SUCCESS] bvid=BV1o4XSBaEg6 已成功抓取全部所需数据。
+[2026-04-18 14:25:09] [SUCCESS] bvid=BV1o4XSBaEqC 已成功抓取全部所需数据。
+[2026-04-18 14:25:13] [SUCCESS] bvid=BV1o5DkB6Eoc 已成功抓取全部所需数据。
+[2026-04-18 14:25:18] [SUCCESS] bvid=BV1o5QxB8E9U 已成功抓取全部所需数据。
+[2026-04-18 14:25:23] [SUCCESS] bvid=BV1o5SfBDET3 已成功抓取全部所需数据。
+[2026-04-18 14:25:29] [SUCCESS] bvid=BV1o6DCBrEcT 已成功抓取全部所需数据。
+[2026-04-18 14:25:34] [SUCCESS] bvid=BV1o6DRB3Eay 已成功抓取全部所需数据。
+[2026-04-18 14:25:40] [SUCCESS] bvid=BV1o6XZBRERN 已成功抓取全部所需数据。
+[2026-04-18 14:25:59] [SUCCESS] bvid=BV1o6XZBREZr 已成功抓取全部所需数据。
+[2026-04-18 14:26:04] [SUCCESS] bvid=BV1o797BGEch 已成功抓取全部所需数据。
+[2026-04-18 14:26:16] [SUCCESS] bvid=BV1o797BGExN 已成功抓取全部所需数据。
+[2026-04-18 14:26:28] [SUCCESS] bvid=BV1o7DYB2EgK 已成功抓取全部所需数据。
+[2026-04-18 14:26:33] [SUCCESS] bvid=BV1o7DYB2Exe 已成功抓取全部所需数据。
+[2026-04-18 14:26:39] [SUCCESS] bvid=BV1o8DTBkEkf 已成功抓取全部所需数据。
+[2026-04-18 14:26:44] [SUCCESS] bvid=BV1o8X6BzEEL 已成功抓取全部所需数据。
+[2026-04-18 14:26:50] [SUCCESS] bvid=BV1o8XQBMEDN 已成功抓取全部所需数据。
+[2026-04-18 14:27:02] [SUCCESS] bvid=BV1o8XhBmEXa 已成功抓取全部所需数据。
+[2026-04-18 14:27:07] [SUCCESS] bvid=BV1o99PBgE3w 已成功抓取全部所需数据。
+[2026-04-18 14:27:12] [SUCCESS] bvid=BV1o99PBgEtN 已成功抓取全部所需数据。
+[2026-04-18 14:27:24] [SUCCESS] bvid=BV1o9D6BKEkK 已成功抓取全部所需数据。
+[2026-04-18 14:27:26] [ERROR] bvid=BV1o9SoBjEBr 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-18 14:27:29] [ERROR] bvid=BV1o9SoBjEBz 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-18 14:27:32] [ERROR] bvid=BV1o9SoBjEaZ 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-18 14:27:34] [ERROR] bvid=BV1o9SoBjEhr 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-18 14:27:37] [ERROR] bvid=BV1o9SoBjEqv 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-18 14:27:39] [ERROR] bvid=BV1o9SoBjEtu 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-18 14:27:45] [SUCCESS] bvid=BV1o9XCBSEre 已成功抓取全部所需数据。
+[2026-04-18 14:27:50] [SUCCESS] bvid=BV1o9XXBrETo 已成功抓取全部所需数据。
+[2026-04-18 14:27:56] [SUCCESS] bvid=BV1oADiB9Eyu 已成功抓取全部所需数据。
+[2026-04-18 14:28:01] [SUCCESS] bvid=BV1oAX5BwEK7 已成功抓取全部所需数据。
+[2026-04-18 14:28:06] [SUCCESS] bvid=BV1oAX5BwEqX 已成功抓取全部所需数据。
+[2026-04-18 14:28:18] [SUCCESS] bvid=BV1oAX5BwEsJ 已成功抓取全部所需数据。
+[2026-04-18 14:28:23] [SUCCESS] bvid=BV1oAXNBgE7R 已成功抓取全部所需数据。
+[2026-04-18 14:28:35] [SUCCESS] bvid=BV1oAXNBgEVW 已成功抓取全部所需数据。
+[2026-04-18 14:28:41] [SUCCESS] bvid=BV1oAXNBgEx7 已成功抓取全部所需数据。
+[2026-04-18 14:28:51] [SUCCESS] bvid=BV1oAXNBgExD 已成功抓取全部所需数据。
+[2026-04-18 14:28:56] [SUCCESS] bvid=BV1oAXUBFETd 已成功抓取全部所需数据。
+[2026-04-18 14:29:01] [SUCCESS] bvid=BV1oAXUBFEob 已成功抓取全部所需数据。
+[2026-04-18 14:29:06] [SUCCESS] bvid=BV1oBDRBkEQM 已成功抓取全部所需数据。
+[2026-04-18 14:29:18] [SUCCESS] bvid=BV1oBDaB5EZU 已成功抓取全部所需数据。
+[2026-04-18 14:29:23] [SUCCESS] bvid=BV1oBDpBpEfM 已成功抓取全部所需数据。
+[2026-04-18 14:29:28] [SUCCESS] bvid=BV1oBDpBpEtB 已成功抓取全部所需数据。
+[2026-04-18 14:29:40] [SUCCESS] bvid=BV1oBSUBsEZz 已成功抓取全部所需数据。
+[2026-04-18 14:29:51] [SUCCESS] bvid=BV1oBSUBsEhG 已成功抓取全部所需数据。
+[2026-04-18 14:30:03] [SUCCESS] bvid=BV1oC9FBhEDd 已成功抓取全部所需数据。
+[2026-04-18 14:30:08] [SUCCESS] bvid=BV1oC9FBhELE 已成功抓取全部所需数据。
+[2026-04-18 14:30:20] [SUCCESS] bvid=BV1oCDsBoEQc 已成功抓取全部所需数据。
+[2026-04-18 14:30:26] [SUCCESS] bvid=BV1oCQbBTE3n 已成功抓取全部所需数据。
+[2026-04-18 14:30:32] [SUCCESS] bvid=BV1oCSDBfE4t 已成功抓取全部所需数据。
+[2026-04-18 14:30:43] [SUCCESS] bvid=BV1oCXxBYE5Y 已成功抓取全部所需数据。
+[2026-04-18 14:30:55] [SUCCESS] bvid=BV1oD9PBGEd5 已成功抓取全部所需数据。
+[2026-04-18 14:31:00] [SUCCESS] bvid=BV1oD9wBeEAE 已成功抓取全部所需数据。
+[2026-04-18 14:31:05] [SUCCESS] bvid=BV1oDQvBdEgt 已成功抓取全部所需数据。
+[2026-04-18 14:31:16] [SUCCESS] bvid=BV1oEDdBLEYS 已成功抓取全部所需数据。
+[2026-04-18 14:31:21] [SUCCESS] bvid=BV1oEQEBCE9S 已成功抓取全部所需数据。
+[2026-04-18 14:31:33] [SUCCESS] bvid=BV1oEX1BHEKf 已成功抓取全部所需数据。
+[2026-04-18 14:31:37] [SUCCESS] bvid=BV1oEXVBwE6Y 已成功抓取全部所需数据。
+[2026-04-18 14:31:56] [SUCCESS] bvid=BV1oEXVBwEh8 已成功抓取全部所需数据。
+[2026-04-18 14:32:01] [SUCCESS] bvid=BV1oEXVBwEjD 已成功抓取全部所需数据。
+[2026-04-18 14:32:06] [SUCCESS] bvid=BV1oEXVBwExH 已成功抓取全部所需数据。
+[2026-04-18 14:32:09] [ERROR] bvid=BV1oEXfBfE1G 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-18 14:32:13] [SUCCESS] bvid=BV1oF9uBQE9m 已成功抓取全部所需数据。
+[2026-04-18 14:32:18] [SUCCESS] bvid=BV1oFDpBEEUe 已成功抓取全部所需数据。
+[2026-04-18 14:32:24] [SUCCESS] bvid=BV1oFQbBiE8B 已成功抓取全部所需数据。
+[2026-04-18 14:32:29] [SUCCESS] bvid=BV1oFQhB5Ei8 已成功抓取全部所需数据。
+[2026-04-18 14:32:59] [SUCCESS] bvid=BV1oFX5BPEqX 已成功抓取全部所需数据。
+[2026-04-18 14:33:04] [SUCCESS] bvid=BV1oGDKBKEnU 已成功抓取全部所需数据。
+[2026-04-18 14:33:09] [SUCCESS] bvid=BV1oGDbBeEKM 已成功抓取全部所需数据。
+[2026-04-18 14:33:15] [SUCCESS] bvid=BV1oGSoB5EGS 已成功抓取全部所需数据。
+[2026-04-18 14:33:21] [SUCCESS] bvid=BV1oGSoB5Erz 已成功抓取全部所需数据。
+[2026-04-18 14:33:26] [SUCCESS] bvid=BV1oGSoB5EuM 已成功抓取全部所需数据。
+[2026-04-18 14:33:32] [SUCCESS] bvid=BV1oGXuBSE4M 已成功抓取全部所需数据。
+[2026-04-18 14:33:37] [SUCCESS] bvid=BV1oH9JB7E5q 已成功抓取全部所需数据。
+[2026-04-18 14:33:49] [SUCCESS] bvid=BV1oHQEBrEr6 已成功抓取全部所需数据。
+[2026-04-18 14:33:56] [SUCCESS] bvid=BV1oHQuBSEoh 已成功抓取全部所需数据。
+[2026-04-18 14:34:02] [SUCCESS] bvid=BV1oHXVBFE6n 已成功抓取全部所需数据。
+[2026-04-18 14:34:13] [SUCCESS] bvid=BV1oHXVBFE7U 已成功抓取全部所需数据。
+[2026-04-18 14:34:24] [SUCCESS] bvid=BV1oHXVBFEH5 已成功抓取全部所需数据。
+[2026-04-18 14:34:30] [SUCCESS] bvid=BV1oHXVBFENu 已成功抓取全部所需数据。
+[2026-04-18 14:34:35] [SUCCESS] bvid=BV1oHXVBFEzS 已成功抓取全部所需数据。
+[2026-04-18 14:34:40] [SUCCESS] bvid=BV1oHXsBfEq3 已成功抓取全部所需数据。
+[2026-04-18 14:34:48] [ERROR] bvid=BV1oJ9JBUEF8 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-18 14:34:59] [SUCCESS] bvid=BV1oJXVBhEAu 已成功抓取全部所需数据。
+[2026-04-18 14:35:04] [SUCCESS] bvid=BV1oJXVBhECY 已成功抓取全部所需数据。
+[2026-04-18 14:35:09] [SUCCESS] bvid=BV1oJXVBhEUG 已成功抓取全部所需数据。
+[2026-04-18 14:35:14] [SUCCESS] bvid=BV1oJXVBhErG 已成功抓取全部所需数据。
+[2026-04-18 14:35:25] [SUCCESS] bvid=BV1oJXVBhEw4 已成功抓取全部所需数据。
+[2026-04-18 14:35:31] [SUCCESS] bvid=BV1oKQgBSENh 已成功抓取全部所需数据。
+[2026-04-18 14:35:36] [SUCCESS] bvid=BV1oKXNBME62 已成功抓取全部所需数据。
+[2026-04-18 14:35:47] [SUCCESS] bvid=BV1oKXNBMEE6 已成功抓取全部所需数据。
+[2026-04-18 14:35:52] [SUCCESS] bvid=BV1oKXNBMEJd 已成功抓取全部所需数据。
+[2026-04-18 14:35:56] [SUCCESS] bvid=BV1oKXNBMELN 已成功抓取全部所需数据。
+[2026-04-18 14:36:01] [SUCCESS] bvid=BV1oL97BCEUh 已成功抓取全部所需数据。
+[2026-04-18 14:36:13] [SUCCESS] bvid=BV1oL97ByEwD 已成功抓取全部所需数据。
+[2026-04-18 14:36:16] [ERROR] bvid=BV1oLX3BxEN1 抓取失败：media: No downloadable media stream found for this bvid.
+[2026-04-18 14:36:21] [SUCCESS] bvid=BV1oMD4BbEss 已成功抓取全部所需数据。
+[2026-04-18 14:36:21] [WARN] 当前子任务已结束，但仍有未成功抓取的视频，已导出 remaining CSV 供继续执行。
+[2026-04-18 14:36:21] [INFO] 已导出剔除成功条目后的剩余 CSV：outputs\video_data\manual_crawls\manual_crawl_media_mode_A_20260418_000648\remaining_bvids_part_75.csv
+[2026-04-18 14:36:21] 子任务结束时间：2026-04-18T14:36:21.408918
+[TIMESTAMP][END] 2026-04-18T14:36:21

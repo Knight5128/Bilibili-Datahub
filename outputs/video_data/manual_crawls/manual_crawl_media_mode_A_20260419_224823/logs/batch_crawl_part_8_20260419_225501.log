@@ -1,0 +1,29 @@
+[TIMESTAMP][BEGIN] 2026-04-19T22:54:14
+[2026-04-19 22:54:17] 开始执行 CSV 批量抓取子任务 part_8。
+[2026-04-19 22:54:17] 子任务开始时间：2026-04-19T22:54:14.514070
+[2026-04-19 22:54:17] 输入文件：batch_input_8.csv
+[2026-04-19 22:54:17] 输入唯一 bvid 数量：100
+[2026-04-19 22:54:20] [ERROR] bvid=BV1pqXDB1Eaa 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-19 22:54:22] [ERROR] bvid=BV1pqXDByEjn 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-19 22:54:30] [ERROR] bvid=BV1pqXDByEsP 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-19 22:54:38] [ERROR] bvid=BV1pzDKBmEaq 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-19 22:54:41] [ERROR] bvid=BV1q5XoB9E23 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-19 22:54:44] [ERROR] bvid=BV1q7XoBQEDt 抓取失败：media: 接口返回错误代码：62012，信息：62012。
+{'code': 62012, 'message': '62012', 'ttl': 1}
+[2026-04-19 22:54:47] [ERROR] bvid=BV1q9SoBjEMV 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-19 22:54:55] [ERROR] bvid=BV1qBDaB5EQG 抓取失败：media: 接口返回错误代码：62002，信息：稿件不可见。
+{'code': 62002, 'message': '稿件不可见', 'ttl': 1}
+[2026-04-19 22:54:58] [ERROR] bvid=BV1qBDpBpEQr 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-19 22:55:01] [ERROR] bvid=BV1qBDpBpEeE 抓取失败：media: 接口返回错误代码：-404，信息：啥都木有。
+{'code': -404, 'message': '啥都木有', 'ttl': 1}
+[2026-04-19 22:55:01] [STOP] 检测到连续 10 条视频抓取失败，已按阈值 10 暂停当前 CSV 批量抓取流程。
+[2026-04-19 22:55:01] [INFO] 已导出剔除成功条目后的剩余 CSV：outputs\video_data\manual_crawls\manual_crawl_media_mode_A_20260419_224823\remaining_bvids_part_8.csv
+[2026-04-19 22:55:01] 子任务结束时间：2026-04-19T22:55:01.727814
+[TIMESTAMP][END] 2026-04-19T22:55:01

@@ -1,0 +1,5 @@
+[TIMESTAMP][BEGIN] 2026-04-19T22:56:58
+[2026-04-19 22:48:23] [INFO] 开始 Mode A（媒体数据）任务目录：outputs/video_data/manual_crawls/manual_crawl_media_mode_A_20260419_224823
+[2026-04-19 22:56:58] [INFO] Mode A（媒体数据）抓取完成：成功 1 条，失败 15 条，剩余 53 条。
+[2026-04-19 22:56:58] [INFO] 本轮结束后已刷新待补媒体数据清单：outputs/video_data/manual_crawls/manual_crawl_media_waitlist_bili_video_stream_data_test_2.csv。
+[TIMESTAMP][END] 2026-04-19T22:56:58
